@@ -1,0 +1,37 @@
+# Environment secrets
+.env
+*.env
+.env.*
+!.env.example
+
+# Local SQLite Database
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+database.db
+
+# Python cache & virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env/
+
+# Logs
+logs/
+*.log
+
+# Sensitive local temp files
+users_db.json
+vendor/
+.impeccable/
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+Desktop.ini

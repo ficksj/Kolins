@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Kolins · AD Hub</title>
+    <!-- Telegram WebApp SDK -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            /* Surfaces */
+            --bg: #090d16;
+            --bg-card: #111827;
+            --bg-card-hover: #172033;
+            --bg-inner: #0d131f;
+            --bg-subtle: #1e293b;
+            
+            /* Borders */
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.16);
+            --border-focus: #3b82f6;
+
+            /* Primary Action (Enterprise Cobalt) */
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --primary-bg: rgba(37, 99, 235, 0.14);
+            --primary-border: rgba(37, 99, 235, 0.35);
+
+            /* Typography & High Contrast (WCAG AA Compliant >= 4.5:1) */
+            --text-main: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --text-muted: #94a3b8;
+            --text-placeholder: #94a3b8;
+
+            /* Semantic Colors */
+            --emerald: #10b981;
+            --emerald-bg: rgba(16, 185, 129, 0.12);
+            --emerald-border: rgba(16, 185, 129, 0.3);
+
+            --rose: #f43f5e;
+            --rose-bg: rgba(244, 63, 94, 0.12);
+            --rose-border: rgba(244, 63, 94, 0.3);
+
+            --amber: #f59e0b;
+            --amber-bg: rgba(245, 158, 11, 0.12);
+            --amber-border: rgba(245, 158, 11, 0.3);
+
+            --blue: #38bdf8;
+            --blue-bg: rgba(56, 189, 248, 0.12);
+            --blue-border: rgba(56, 189, 248, 0.3);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+
+        /* CUSTOM SCROLLBAR & SELECTION */
+        ::selection {
+            background: rgba(37, 99, 235, 0.3);
+            color: #fff;
+        }
+
+        .app-container {
+            max-width: 560px;
+            margin: 0 auto;
+            padding: 16px 14px 60px;
+        }
+
+        /* HEADER */
+        .glass-header {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            background: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+
+        .brand-text h1 {
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: -0.2px;
+            color: var(--text-main);
+            margin: 0;
+        }
+
+        .brand-text span {
+            font-size: 12px;
+            color: var(--text-muted);
+            font-weight: 500;
+            display: block;
+        }
+
+        .chip-tls {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--emerald-bg);
+            border: 1px solid var(--emerald-border);
+            color: var(--emerald);
+            padding: 5px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .tls-indicator {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: var(--emerald);
+        }
+
+        /* METRICS ROW */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .metric-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 6px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.3px;
+            margin-bottom: 4px;
+        }
+
+        .metric-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            letter-spacing: 0.2px;
+        }
+
+        /* TABS SEGMENTED CONTROL */
+        .segmented-tabs {
+            display: flex;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 4px;
+            margin-bottom: 16px;
+        }
+
+        .tab-item {
+            flex: 1;
+            padding: 10px 6px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            border: none;
+            background: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.18s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .tab-item.active {
+            background: var(--primary);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        /* SEARCH BAR */
+        .search-container {
+            position: relative;
+            margin-bottom: 16px;
+        }
+
+        .search-field {
+            width: 100%;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 13px 16px 13px 44px;
+            border-radius: 12px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 500;
+            outline: none;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .search-field::placeholder {
+            color: var(--text-placeholder);
+        }
+
+        .search-field:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+        }
+
+        .search-icon-box {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-muted);
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+        }
+
+        /* ENTITY CARDS */
+        .entity-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            margin-bottom: 14px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+            transition: border-color 0.15s;
+        }
+
+        .entity-card:hover {
+            border-color: var(--border-hover);
+        }
+
+        .card-top {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            gap: 8px;
+        }
+
+        .entity-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            letter-spacing: -0.2px;
+        }
+
+        .entity-role {
+            font-size: 13px;
+            color: var(--blue);
+            font-weight: 500;
+            margin-top: 3px;
+        }
+
+        .badge-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .badge-pill.active {
+            background: var(--emerald-bg);
+            border: 1px solid var(--emerald-border);
+            color: var(--emerald);
+        }
+
+        .badge-pill.disabled {
+            background: var(--rose-bg);
+            border: 1px solid var(--rose-border);
+            color: var(--rose);
+        }
+
+        .badge-pill.offline {
+            background: var(--bg-subtle);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+
+        /* DATA ROW SPEC */
+        .data-list {
+            background: var(--bg-inner);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 8px 12px;
+            margin-bottom: 12px;
+        }
+
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 7px 0;
+            font-size: 13px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .data-row:last-child {
+            border-bottom: none;
+        }
+
+        .data-key {
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 7px;
+        }
+
+        .data-val {
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-align: right;
+            word-break: break-all;
+        }
+
+        .data-val code {
+            background: rgba(255, 255, 255, 0.06);
+            padding: 3px 6px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: var(--blue);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        /* ACTION BUTTONS */
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .actions-grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .act-btn {
+            border: none;
+            padding: 10px 8px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-height: 38px;
+        }
+
+        .act-btn:active {
+            transform: scale(0.98);
+        }
+
+        .act-btn-indigo {
+            background: var(--primary);
+            color: #fff;
+        }
+        .act-btn-indigo:hover {
+            background: var(--primary-hover);
+        }
+
+        .act-btn-emerald {
+            background: var(--emerald-bg);
+            border: 1px solid var(--emerald-border);
+            color: var(--emerald);
+        }
+
+        .act-btn-rose {
+            background: var(--rose-bg);
+            border: 1px solid var(--rose-border);
+            color: var(--rose);
+        }
+
+        .act-btn-amber {
+            background: var(--amber-bg);
+            border: 1px solid var(--amber-border);
+            color: var(--amber);
+        }
+
+        .act-btn-subtle {
+            background: var(--bg-subtle);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+        }
+
+        .act-btn-subtle:hover {
+            background: #283548;
+            color: #fff;
+        }
+
+        /* DETAILS ACCORDION */
+        .details-wrapper {
+            margin-top: 10px;
+            background: var(--bg-inner);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            overflow: hidden;
+        }
+
+        summary.details-header {
+            padding: 10px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            outline: none;
+        }
+
+        summary.details-header:hover {
+            color: var(--text-main);
+        }
+
+        .details-body {
+            padding: 10px 12px;
+            font-size: 12px;
+            line-height: 1.6;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+        }
+
+        .tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 6px;
+        }
+
+        .tag-item {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* LOADER */
+        .modern-loader {
+            display: none;
+            padding: 40px 0;
+            text-align: center;
+        }
+
+        .plain-spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-placeholder {
+            text-align: center;
+            padding: 50px 20px;
+            color: var(--text-muted);
+        }
+
+        .empty-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+            color: var(--text-muted);
+        }
+
+        /* MODAL */
+        .modal-backdrop {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .modal-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 22px;
+            max-width: 440px;
+            width: 100%;
+            box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6);
+        }
+
+        .modal-headline {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            color: var(--text-main);
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- HEADER -->
+        <header class="glass-header">
+            <div class="brand">
+                <div class="brand-icon">
+                    <i data-lucide="shield" style="width:20px;height:20px;"></i>
+                </div>
+                <div class="brand-text">
+                    <h1>Kolins · AD Hub</h1>
+                    <span>kdb.kz · Active Directory</span>
+                </div>
+            </div>
+            <div class="chip-tls">
+                <span class="tls-indicator"></span>
+                <span>StartTLS</span>
+            </div>
+        </header>
+
+        <!-- STATS OVERVIEW -->
+        <section class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value" id="statUsers">—</div>
+                <div class="metric-title">Всего</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="statActive" style="color: var(--emerald);">—</div>
+                <div class="metric-title">Активны</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="statDisabled" style="color: var(--rose);">—</div>
+                <div class="metric-title">Отключены</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" id="statPCs" style="color: var(--blue);">—</div>
+                <div class="metric-title">ПК в AD</div>
+            </div>
+        </section>
+
+        <!-- TABS -->
+        <nav class="segmented-tabs">
+            <button class="tab-item active" onclick="switchTab('users', event)">
+                <i data-lucide="users" style="width:16px;height:16px;"></i> Сотрудники
+            </button>
+            <button class="tab-item" onclick="switchTab('pcs', event)">
+                <i data-lucide="monitor" style="width:16px;height:16px;"></i> Компьютеры
+            </button>
+            <button class="tab-item" onclick="switchTab('tools', event)">
+                <i data-lucide="wrench" style="width:16px;height:16px;"></i> Утилиты
+            </button>
+        </nav>
+
+        <!-- SEARCH -->
+        <div class="search-container" id="searchWrapper">
+            <div class="search-icon-box">
+                <i data-lucide="search" style="width:18px;height:18px;"></i>
+            </div>
+            <input type="text" id="searchInput" class="search-field" placeholder="Поиск по ФИО или логину..." oninput="onSearchInput()">
+        </div>
+
+        <!-- LOADER -->
+        <div class="modern-loader" id="loader">
+            <div class="plain-spinner"></div>
+            <div style="font-size:13px; color: var(--text-muted); font-weight:500;">Запрос к контроллеру домена...</div>
+        </div>
+
+        <!-- RESULTS FEED -->
+        <main id="resultsFeed"></main>
+    </div>
+
+    <!-- MODAL POPUP -->
+    <div class="modal-backdrop" id="modalBackdrop">
+        <div class="modal-card">
+            <h2 class="modal-headline" id="modalTitle">Заголовок</h2>
+            <div id="modalContent" style="font-size: 13.5px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 20px;"></div>
+            <div style="display:flex; gap:8px;">
+                <button class="act-btn act-btn-subtle" style="flex:1; padding:12px;" onclick="closeModal()">Закрыть</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+        if (tg) {
+            tg.expand();
+            tg.ready();
+            if (tg.setHeaderColor) tg.setHeaderColor('#090d16');
+            if (tg.setBackgroundColor) tg.setBackgroundColor('#090d16');
+        }
+
+        let currentTab = 'users';
+        let searchDebounce = null;
+
+        async function initDashboard() {
+            try {
+                const res = await fetch('/api/stats');
+                const data = await res.json();
+                if (data.ok && data.stats) {
+                    document.getElementById('statUsers').innerText = data.stats.total_users;
+                    document.getElementById('statActive').innerText = data.stats.active_users;
+                    document.getElementById('statDisabled').innerText = data.stats.disabled_users;
+                    document.getElementById('statPCs').innerText = data.stats.total_computers;
+                }
+            } catch (e) {
+                console.error('Stats error:', e);
+            }
+            lucide.createIcons();
+            showInitialHelp();
+        }
+
+        function showInitialHelp() {
+            const feed = document.getElementById('resultsFeed');
+            feed.innerHTML = `
+                <div class="empty-placeholder">
+                    <div class="empty-icon"><i data-lucide="search" style="width:36px;height:36px;color:var(--text-muted);"></i></div>
+                    <div style="font-size:14px; font-weight:600; color:#fff; margin-bottom:4px;">Начните поиск</div>
+                    <div style="font-size:13px; color:var(--text-muted);">Введите фамилию, логин или имя ПК для мгновенной карточки</div>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        function switchTab(tab, ev) {
+            currentTab = tab;
+            document.querySelectorAll('.tab-item').forEach(b => b.classList.remove('active'));
+            if (ev && ev.currentTarget) {
+                ev.currentTarget.classList.add('active');
+            }
+
+            const searchWrap = document.getElementById('searchWrapper');
+            const feed = document.getElementById('resultsFeed');
+
+            if (tab === 'tools') {
+                searchWrap.style.display = 'none';
+                renderToolsFeed();
+            } else {
+                searchWrap.style.display = 'block';
+                document.getElementById('searchInput').placeholder = tab === 'users' ? 'Поиск по ФИО или логину...' : 'Поиск ПК по имени или описанию...';
+                document.getElementById('searchInput').value = '';
+                showInitialHelp();
+            }
+            lucide.createIcons();
+        }
+
+        function onSearchInput() {
+            clearTimeout(searchDebounce);
+            const val = document.getElementById('searchInput').value.trim();
+            if (!val) {
+                showInitialHelp();
+                return;
+            }
+            searchDebounce = setTimeout(() => executeSearch(val), 300);
+        }
+
+        async function executeSearch(query) {
+            const loader = document.getElementById('loader');
+            const feed = document.getElementById('resultsFeed');
+            loader.style.display = 'block';
+            feed.innerHTML = '';
+
+            try {
+                const endpoint = currentTab === 'users' ? `/api/search/users?q=${encodeURIComponent(query)}` : `/api/search/pcs?q=${encodeURIComponent(query)}`;
+                const res = await fetch(endpoint);
+                const data = await res.json();
+                loader.style.display = 'none';
+
+                if (!data.ok || !data.items || data.items.length === 0) {
+                    feed.innerHTML = `
+                        <div class="empty-placeholder">
+                            <div class="empty-icon"><i data-lucide="search-x" style="width:36px;height:36px;"></i></div>
+                            <div style="font-size:14px; font-weight:600; color:#fff;">Ничего не найдено</div>
+                            <div style="font-size:13px; color:var(--text-muted);">По запросу "${escapeHtml(query)}" совпадений нет</div>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                if (currentTab === 'users') {
+                    renderUserCards(data.items);
+                } else {
+                    renderPCCards(data.items);
+                }
+            } catch (e) {
+                loader.style.display = 'none';
+                feed.innerHTML = `<div class="empty-placeholder" style="color:var(--rose);">Ошибка соединения с контроллером</div>`;
+            }
+            lucide.createIcons();
+        }
+
+        function renderUserCards(users) {
+            const feed = document.getElementById('resultsFeed');
+            feed.innerHTML = users.map(u => `
+                <div class="entity-card">
+                    <div class="card-top">
+                        <div>
+                            <div class="entity-name">${escapeHtml(u.display_name)}</div>
+                            <div class="entity-role">${escapeHtml(u.title || '—')}</div>
+                        </div>
+                        <span class="badge-pill ${u.is_disabled ? 'disabled' : 'active'}">
+                            ${u.is_disabled ? 'Отключен' : 'Активен'}
+                        </span>
+                    </div>
+
+                    <div class="data-list">
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="user" style="width:13px;height:13px;"></i> Логин</span>
+                            <span class="data-val"><code>${escapeHtml(u.username)}</code></span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="building" style="width:13px;height:13px;"></i> Отдел</span>
+                            <span class="data-val">${escapeHtml(u.department || '—')}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="phone" style="width:13px;height:13px;"></i> Телефон</span>
+                            <span class="data-val"><code>${escapeHtml(u.telephone_number || '—')}</code></span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="smartphone" style="width:13px;height:13px;"></i> Мобильный</span>
+                            <span class="data-val">${escapeHtml(u.mobile || '—')}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="mail" style="width:13px;height:13px;"></i> Email</span>
+                            <span class="data-val"><code>${escapeHtml(u.mail || '—')}</code></span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="map-pin" style="width:13px;height:13px;"></i> Кабинет</span>
+                            <span class="data-val">${escapeHtml(u.physical_delivery_office_name || '—')}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="user-check" style="width:13px;height:13px;"></i> Руководитель</span>
+                            <span class="data-val">${escapeHtml(u.manager_name || '—')}</span>
+                        </div>
+                    </div>
+
+                    <div class="actions-grid">
+                        <button class="act-btn act-btn-indigo" onclick="findUserPC('${escapeHtml(u.username)}')">
+                            <i data-lucide="monitor" style="width:14px;height:14px;"></i> Найти ПК
+                        </button>
+                        <button class="act-btn act-btn-rose" onclick="resetUserPassword('${escapeHtml(u.username)}')">
+                            <i data-lucide="key" style="width:14px;height:14px;"></i> Пароль
+                        </button>
+                        <button class="act-btn act-btn-emerald" onclick="unlockUser('${escapeHtml(u.username)}')">
+                            <i data-lucide="unlock" style="width:14px;height:14px;"></i> Разблок
+                        </button>
+                    </div>
+
+                    <div class="actions-grid-2">
+                        <button class="act-btn act-btn-amber" onclick="moveUserCert('${escapeHtml(u.username)}')">
+                            <i data-lucide="file-badge" style="width:14px;height:14px;"></i> В notebooklenovo
+                        </button>
+                        <button class="act-btn act-btn-subtle" onclick="revertUserOU('${escapeHtml(u.username)}')">
+                            <i data-lucide="rotate-ccw" style="width:14px;height:14px;"></i> Вернуть OU
+                        </button>
+                    </div>
+
+                    <div class="details-wrapper">
+                        <details>
+                            <summary class="details-header">
+                                <span>Безопасность и группы AD (${(u.groups || []).length})</span>
+                                <i data-lucide="chevron-down" style="width:14px;height:14px;"></i>
+                            </summary>
+                            <div class="details-body">
+                                <div><b>Смена пароля:</b> ${escapeHtml(u.pwd_last_set || '—')}</div>
+                                <div><b>Последний вход:</b> ${escapeHtml(u.last_logon || '—')}</div>
+                                <div><b>Ошибок пароля:</b> <code>${u.bad_pwd_count || 0}</code></div>
+                                <div><b>Скрипт входа:</b> <code>${escapeHtml(u.script_path || '—')}</code></div>
+                                <div><b>Рабочая станция:</b> <code>${escapeHtml(u.logon_workstation || '—')}</code></div>
+                                <div style="margin-top:6px;"><b>Группы безопасности:</b></div>
+                                <div class="tag-list">
+                                    ${(u.groups || []).map(g => `<span class="tag-item">${escapeHtml(g)}</span>`).join('')}
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function renderPCCards(pcs) {
+            const feed = document.getElementById('resultsFeed');
+            feed.innerHTML = pcs.map(pc => `
+                <div class="entity-card">
+                    <div class="card-top">
+                        <div>
+                            <div class="entity-name">${escapeHtml(pc.name || pc.Name)}</div>
+                            <div class="entity-role"><code>${escapeHtml(pc.dns_name || '—')}</code></div>
+                        </div>
+                        <span class="badge-pill ${pc.is_online ? 'active' : 'offline'}">
+                            ${pc.is_online ? 'В сети' : 'Оффлайн'}
+                        </span>
+                    </div>
+
+                    <div class="data-list">
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="user" style="width:13px;height:13px;"></i> Активный юзер</span>
+                            <span class="data-val"><b>${escapeHtml(pc.logged_user || '—')}</b></span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="cpu" style="width:13px;height:13px;"></i> ОС</span>
+                            <span class="data-val">${escapeHtml((pc.os || '') + ' ' + (pc.os_version || ''))}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="info" style="width:13px;height:13px;"></i> Описание</span>
+                            <span class="data-val">${escapeHtml(pc.description || pc.Description || '—')}</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key"><i data-lucide="calendar" style="width:13px;height:13px;"></i> Создан в AD</span>
+                            <span class="data-val">${escapeHtml(pc.created || '—')}</span>
+                        </div>
+                    </div>
+
+                    <div class="actions-grid-2">
+                        <button class="act-btn act-btn-indigo" onclick="movePC('${escapeHtml(pc.name || pc.Name)}')">
+                            <i data-lucide="folder-input" style="width:14px;height:14px;"></i> В notebooklenovo
+                        </button>
+                        <button class="act-btn act-btn-rose" onclick="confirmDeletePC('${escapeHtml(pc.name || pc.Name)}')">
+                            <i data-lucide="trash-2" style="width:14px;height:14px;"></i> Удалить из AD
+                        </button>
+                    </div>
+
+                    ${pc.dn ? `
+                    <div class="details-wrapper">
+                        <details>
+                            <summary class="details-header">
+                                <span>Distinguished Name</span>
+                                <i data-lucide="chevron-down" style="width:14px;height:14px;"></i>
+                            </summary>
+                            <div class="details-body">
+                                <code>${escapeHtml(pc.dn)}</code>
+                            </div>
+                        </details>
+                    </div>
+                    ` : ''}
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function renderToolsFeed() {
+            const feed = document.getElementById('resultsFeed');
+            feed.innerHTML = `
+                <div class="entity-card">
+                    <div class="card-top">
+                        <div class="entity-name">Мгновенная Zoom-конференция</div>
+                    </div>
+                    <div style="font-size:13px; color:var(--text-muted); margin-bottom:14px;">
+                        Создание комнаты удаленной техподдержки через официальный Zoom API.
+                    </div>
+                    <input type="text" id="zoomTopic" class="search-field" placeholder="Тема или ФИО сотрудника..." style="padding-left:16px; margin-bottom:12px;">
+                    <button class="act-btn act-btn-indigo" style="width:100%; padding:13px;" onclick="createZoom()">
+                        <i data-lucide="video" style="width:16px;height:16px;"></i> Сгенерировать комнату Zoom
+                    </button>
+                </div>
+
+                <div class="entity-card">
+                    <div class="card-top">
+                        <div class="entity-name">Статус инфраструктуры AD</div>
+                    </div>
+                    <div class="data-list">
+                        <div class="data-row">
+                            <span class="data-key">Домен</span>
+                            <span class="data-val"><code>kdb.kz</code></span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key">Контроллер</span>
+                            <span class="data-val"><code>192.168.201.15</code></span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key">Протокол</span>
+                            <span class="data-val">LDAP over StartTLS (389)</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-key">Туннель</span>
+                            <span class="data-val" style="color:var(--emerald);">Nurl WebSocket Bridge</span>
+                        </div>
+                    </div>
+                    <button class="act-btn act-btn-subtle" style="width:100%; padding:11px;" onclick="initDashboard(); haptic('success');">
+                        <i data-lucide="refresh-cw" style="width:14px;height:14px;"></i> Обновить метрики домена
+                    </button>
+                </div>
+            `;
+            lucide.createIcons();
+        }
+
+        /* ACTIONS */
+        async function findUserPC(username) {
+            haptic('medium');
+            openModal('Поиск ПК сотрудника', '<div class="plain-spinner"></div><div style="text-align:center; color:var(--text-muted);">Опрос активных сессий в домене...</div>');
+            try {
+                const res = await fetch(`/api/user/${username}/pc`);
+                const data = await res.json();
+                if (data.ok && data.pc_name) {
+                    haptic('success');
+                    openModal('Рабочее место найдено', `
+                        <div style="background:var(--bg-inner); border: 1px solid var(--border); border-radius:10px; padding:12px;">
+                            <div><b>Сотрудник:</b> <code>${username}</code></div>
+                            <div style="margin-top:6px;"><b>Компьютер:</b> <span style="color:var(--blue); font-size:15px; font-weight:700;">${data.pc_name}</span></div>
+                            <div style="margin-top:4px;"><b>FQDN:</b> <code>${data.dns_name}</code></div>
+                            <div style="margin-top:8px; color:var(--emerald); font-weight:600;">В сети (активная сессия)</div>
+                        </div>
+                    `);
+                } else {
+                    haptic('error');
+                    openModal('ПК не найден', `Сотрудник <code>${username}</code> в данный момент не залогинен ни на одной машине домена.`);
+                }
+            } catch (e) {
+                openModal('Ошибка', 'Сбой сетевого запроса.');
+            }
+        }
+
+        async function resetUserPassword(username) {
+            haptic('medium');
+            if (!confirm(`Сбросить пароль сотрудника ${username} на ASDfg123+?`)) return;
+            try {
+                const res = await fetch(`/api/user/${username}/reset_password`, { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    haptic('success');
+                    openModal('Пароль сброшен', `
+                        Пароль сотрудника <code>${username}</code> успешно обновлен в Active Directory.<br><br>
+                        <b>Временный пароль:</b> <code>${data.password}</code>
+                    `);
+                } else {
+                    haptic('error');
+                    openModal('Ошибка', 'Active Directory отклонила сброс пароля.');
+                }
+            } catch (e) {
+                openModal('Ошибка', 'Сбой связи с сервером.');
+            }
+        }
+
+        async function unlockUser(username) {
+            haptic('medium');
+            try {
+                const res = await fetch(`/api/user/${username}/unlock`, { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    haptic('success');
+                    openModal('Разблокировано', `Учетная запись <code>${username}</code> разблокирована в AD.`);
+                } else {
+                    haptic('error');
+                    openModal('Ошибка', 'Не удалось разблокировать пользователя.');
+                }
+            } catch (e) {
+                openModal('Ошибка', 'Сбой запроса.');
+            }
+        }
+
+        async function moveUserCert(username) {
+            haptic('medium');
+            if (!confirm(`Переместить ${username} в OU=notebooklenovo для сертификата?`)) return;
+            try {
+                const res = await fetch(`/api/user/${username}/cert`, { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    haptic('success');
+                    openModal('Перемещение выполнено', `Сотрудник <code>${username}</code> перемещён в <code>notebooklenovo</code>. После выгрузки сертификата нажмите "Вернуть OU".`);
+                } else {
+                    openModal('Ошибка', 'Не удалось переместить пользователя.');
+                }
+            } catch (e) {
+                openModal('Ошибка', 'Сбой перемещения.');
+            }
+        }
+
+        async function revertUserOU(username) {
+            haptic('medium');
+            try {
+                const res = await fetch(`/api/user/${username}/revert`, { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    haptic('success');
+                    openModal('Возврат завершен', `Сотрудник <code>${username}</code> успешно возвращён в исходный OU:<br><br><code>${data.original_ou}</code>`);
+                } else {
+                    openModal('Внимание', data.error || 'Исходный OU не найден в базе данных бота.');
+                }
+            } catch (e) {
+                openModal('Ошибка', 'Сбой возврата.');
+            }
+        }
+
+        async function movePC(pcName) {
+            haptic('medium');
+            if (!confirm(`Переместить ПК ${pcName} в KDB notebooklenovo?`)) return;
+            try {
+                const res = await fetch(`/api/pc/${pcName}/move`, { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    haptic('success');
+                    openModal('Компьютер перемещен', `ПК <code>${pcName}</code> успешно перемещён в целевое подразделение ноутбуков.`);
+                } else {
+                    openModal('Ошибка', 'Не удалось переместить компьютер.');
+                }
+            } catch (e) {
+                openModal('Ошибка', 'Сбой запроса.');
+            }
+        }
+
+        function confirmDeletePC(pcName) {
+            haptic('warning');
+            if (!confirm(`ВНИМАНИЕ: Безвозвратно удалить компьютер ${pcName} из Active Directory?`)) return;
+            deletePC(pcName);
+        }
+
+        async function deletePC(pcName) {
+            try {
+                const res = await fetch(`/api/pc/${pcName}/delete`, { method: 'POST' });
+                const data = await res.json();
+                if (data.ok) {
+                    haptic('success');
+                    openModal('Удалено', `Компьютер <code>${pcName}</code> удален из домена.`);
+                    onSearchInput();
+                } else {
+                    openModal('Ошибка', 'Не удалось удалить компьютер из AD.');
+                }
+            } catch (e) {
+                openModal('Ошибка', 'Сбой запроса.');
+            }
+        }
+
+        async function createZoom() {
+            haptic('medium');
+            const topic = document.getElementById('zoomTopic').value.trim() || 'Техподдержка AD';
+            openModal('Генерация Zoom...', '<div class="plain-spinner"></div><div style="text-align:center; color:var(--text-muted);">Создание комнаты через Zoom API...</div>');
+            try {
+                const res = await fetch('/api/zoom', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic })
+                });
+                const data = await res.json();
+                if (data.ok && data.meeting) {
+                    haptic('success');
+                    openModal('Zoom-конференция готова', `
+                        <div><b>Тема:</b> ${escapeHtml(topic)}</div>
+                        <div style="margin-top:6px;"><b>Пароль:</b> <code>${escapeHtml(data.meeting.password)}</code></div>
+                        <div style="margin-top:14px;">
+                            <a href="${data.meeting.join_url}" target="_blank" class="act-btn act-btn-indigo" style="display:block; text-decoration:none; text-align:center; padding:12px;">Войти в комнату Zoom</a>
+                        </div>
+                    `);
+                } else {
+                    openModal('Ошибка', 'Не удалось создать конференцию Zoom.');
+                }
+            } catch (e) {
+                openModal('Ошибка', 'Сбой Zoom API.');
+            }
+        }
+
+        function openModal(title, html) {
+            document.getElementById('modalTitle').innerText = title;
+            document.getElementById('modalContent').innerHTML = html;
+            document.getElementById('modalBackdrop').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('modalBackdrop').style.display = 'none';
+        }
+
+        function haptic(type) {
+            if (tg && tg.HapticFeedback) {
+                if (type === 'medium') tg.HapticFeedback.impactOccurred('medium');
+                if (type === 'success') tg.HapticFeedback.notificationOccurred('success');
+                if (type === 'error') tg.HapticFeedback.notificationOccurred('error');
+                if (type === 'warning') tg.HapticFeedback.notificationOccurred('warning');
+            }
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '—';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/&lt;/g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        initDashboard();
+    </script>
+</body>
+</html>
