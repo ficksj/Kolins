@@ -41,9 +41,6 @@ def render_home(user_name: str, ad_connected: bool) -> str:
 
     buttons = [
         button_row(
-            webapp_button('🚀 Открыть AD Hub (Mini App)', 'https://oktatmt5.nurl.pw', 'primary')
-        ),
-        button_row(
             callback_button('👤 Найти сотрудника', 'home:user', 'primary'),
             callback_button('💻 Найти ПК', 'home:pc', 'primary'),
         ),
