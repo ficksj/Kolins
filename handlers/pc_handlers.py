@@ -8,7 +8,8 @@ from handlers.states import PCSearchState
 from services.ad_service import ad_service
 from services.audit_service import send_audit_log
 from services.logger_service import get_logger
-from services.pc_monitor_service import check_pc_online, get_pc_logged_user
+from services.pc_monitor_service import check_pc_online, get_pc_logged_user, get_pc_diagnostics, reboot_remote_pc
+from services.rich_message_service import render_progress_bar
 from services.rich_message_service import (
     button_row,
     callback_button,
@@ -46,7 +47,11 @@ def render_pc_profile(details: dict, is_online: bool, logged_user: str | None) -
 
     buttons = [
         button_row(
-            callback_button('📦 В KDB notebooklenovo', f'pc:move:{name}', 'primary'),
+            callback_button('📊 Диагностика ПК', f'pc:diag:{name}', 'primary'),
+            callback_button('📦 В notebooklenovo', f'pc:move:{name}', 'primary'),
+        ),
+        button_row(
+            callback_button('🔄 Перезагрузить', f'pc:reboot_confirm:{name}', 'danger'),
             callback_button('🗑 Удалить из AD', f'pc:delete_confirm:{name}', 'danger'),
         ),
         button_row(
@@ -157,6 +162,106 @@ async def handle_pc_action(callback: CallbackQuery, state: FSMContext):
 
     if action == "show":
         await show_pc_profile(callback.message, value, edit=True)
+        return
+
+
+    if action == "diag":
+        await callback.answer("Опрос WMI/системных параметров ПК...")
+        details = ad_service.get_computer_details(value)
+        dns_name = details.get("dns_name", value) if details else value
+        diag = await asyncio.to_thread(get_pc_diagnostics, value, dns_name)
+
+        if not diag:
+            card = render_bubble_card(
+                title="⚠️ Диагностика недоступна",
+                badge="Оффлайн / WMI ошибка",
+                body_lines=[
+                    f"Компьютер <code>{html_text(value)}</code> недоступен по сети или удаленный WMI заблокирован брандмауэром Windows.",
+                    "Убедитесь, что машина включена и находится в локальной сети Банка."
+                ],
+                buttons=[
+                    button_row(
+                        callback_button('🔄 Повторить опрос', f'pc:diag:{value}', 'primary'),
+                        callback_button('💻 К карточке ПК', f'pc:show:{value}', 'link'),
+                    )
+                ]
+            )
+            await edit_rich(callback.message, card)
+            return
+
+        body = [
+            f"💻 <b>Компьютер:</b> <code>{html_text(value)}</code>",
+            f"⏱ <b>Время непрерывной работы (Uptime):</b> {html_text(diag.get('uptime', '—'))}",
+            f"🧠 <b>Оперативная память (RAM):</b> {diag.get('ram_used_gb', 0)} ГБ / {diag.get('ram_total_gb', 0)} ГБ ({diag.get('ram_percent', 0)}%)",
+            render_progress_bar(diag.get('ram_percent', 0), length=12),
+        ]
+
+        table_rows = []
+        for disk in diag.get("disks", []):
+            dev = disk.get("device", "Диск")
+            pct = disk.get("percent", 0)
+            free = disk.get("free_gb", 0)
+            total = disk.get("total_gb", 0)
+            bar = render_progress_bar(pct, length=8)
+            table_rows.append((f"Диск {dev}", f"{bar}<br>{free} ГБ свободно из {total} ГБ"))
+
+        card = render_bubble_card(
+            title="📊 Системная диагностика ПК",
+            badge="Телеметрия WMI",
+            body_lines=body,
+            table_rows=table_rows,
+            footer_note="Данные получены напрямую из операционной системы.",
+            buttons=[
+                button_row(
+                    callback_button('🔄 Перезагрузить ПК', f'pc:reboot_confirm:{value}', 'danger'),
+                    callback_button('🔄 Обновить', f'pc:diag:{value}', 'link'),
+                ),
+                button_row(callback_button('💻 К карточке ПК', f'pc:show:{value}', 'link')),
+            ]
+        )
+        await edit_rich(callback.message, card)
+        return
+
+    if action == "reboot_confirm":
+        card = render_bubble_card(
+            title="🔄 Подтверждение перезагрузки",
+            badge="Внимание",
+            body_lines=[
+                f"Вы уверены, что хотите принудительно перезагрузить компьютер <code>{html_text(value)}</code>?",
+                "Все несохраненные данные пользователя на машине будут закрыты."
+            ],
+            buttons=[
+                button_row(callback_button('⚠️ Да, перезагрузить', f'pc:reboot_do:{value}', 'danger')),
+                button_row(callback_button('❌ Отмена', f'pc:show:{value}', 'link'))
+            ]
+        )
+        await edit_rich(callback.message, card)
+        return
+
+    if action == "reboot_do":
+        await callback.answer("Отправка команды на перезагрузку...")
+        details = ad_service.get_computer_details(value)
+        dns_name = details.get("dns_name", value) if details else value
+        success = await asyncio.to_thread(reboot_remote_pc, value, dns_name)
+        await send_audit_log(
+            callback.bot, callback.from_user,
+            "Удаленная перезагрузка ПК", value, status=success
+        )
+        badge = "Выполнено" if success else "Ошибка"
+        res_text = f"Команда перезагрузки успешно доставлена на <code>{html_text(value)}</code>." if success else f"Не удалось перезагрузить <code>{html_text(value)}</code> (ПК оффлайн или запрещен удаленный RPC)."
+        
+        card = render_bubble_card(
+            title="🔄 Результат перезагрузки",
+            badge=badge,
+            body_lines=[res_text],
+            buttons=[
+                button_row(
+                    callback_button('💻 К карточке ПК', f'pc:show:{value}', 'link'),
+                    callback_button('🏠 Главное меню', 'home:main', 'link')
+                )
+            ]
+        )
+        await edit_rich(callback.message, card)
         return
 
     if action == "move":

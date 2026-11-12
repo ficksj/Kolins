@@ -5,6 +5,8 @@ from aiogram.types import CallbackQuery, Message
 
 from services.ad_service import ad_service
 from services.audit_service import send_audit_log
+from services.print_service import generate_equipment_act
+from aiogram.types import BufferedInputFile
 from services.db_service import (
     get_original_ou,
     get_user_pc_session,
@@ -91,7 +93,10 @@ def render_user_profile(details: dict) -> str:
         ),
         button_row(
             callback_button('📜 Выдать сертификат', f'user:cert:{username}', 'link'),
-            callback_button('🔄 Обновить', f'user:show:{username}', 'link'),
+            callback_button('📄 Акт передачи техники', f'user:act:{username}', 'primary'),
+        ),
+        button_row(
+            callback_button('🔄 Обновить профиль', f'user:show:{username}', 'link'),
         ),
         button_row(callback_button('⬅️ Главное меню', 'home:main', 'link')),
     ]
@@ -382,6 +387,34 @@ async def handle_user_action(callback: CallbackQuery):
             buttons=buttons
         )
         await edit_rich(callback.message, card)
+        return
+
+
+    if action == "act":
+        await callback.answer("Генерация официального PDF-акта...")
+        user_det = ad_service.get_user_details(username)
+        if not user_det:
+            await callback.answer("Ошибка: сотрудник не найден", show_alert=True)
+            return
+
+        session = get_user_pc_session(username)
+        pc_det = None
+        if session and session.get("pc_name"):
+            pc_det = ad_service.get_computer_details(session["pc_name"])
+
+        # Генерация PDF
+        pdf_buf = await asyncio.to_thread(generate_equipment_act, user_det, pc_det)
+        pdf_file = BufferedInputFile(pdf_buf.read(), filename=f"Акт_приема_передачи_{username}.pdf")
+
+        fio = user_det.get("display_name", username)
+        pc_caption = f"💻 Компьютер: <code>{pc_det['name']}</code>" if pc_det else "💻 Оборудование: Ноутбук / ПК (по умолчанию)"
+
+        await callback.message.answer_document(
+            document=pdf_file,
+            caption=f"📄 <b>Официальный Акт приема-передачи оборудования</b>\n\n👤 Сотрудник: <b>{html_text(fio)}</b>\n{pc_caption}\n📅 Дата: {html_text(user_det.get('created_at', ''))[:10]}\n\n<i>Документ готов к печати и подписанию.</i>",
+            parse_mode="HTML"
+        )
+        await send_audit_log(callback.bot, callback.from_user, "Генерация Акта приема-передачи техники", username, status=True)
         return
 
     if action == "revert":

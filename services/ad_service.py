@@ -476,4 +476,22 @@ class ActiveDirectoryService:
         photo_data = self.conn.entries[0].thumbnailPhoto.value
         return photo_data if photo_data else None
 
+
+    def get_locked_users(self) -> list[dict]:
+        """Поиск заблокированных учетных записей (lockoutTime > 0)"""
+        filter_str = "(&(objectCategory=person)(objectClass=user)(lockoutTime>=1))"
+        attrs = ['sAMAccountName', 'displayName', 'department', 'title', 'lockoutTime', 'badPwdCount']
+        if not self._safe_search(self.base_dn, filter_str, attrs):
+            return []
+        users = []
+        for e in self.conn.entries:
+            users.append({
+                "username": str(e.sAMAccountName.value) if e.sAMAccountName else "",
+                "display_name": str(e.displayName.value) if e.displayName else str(e.sAMAccountName.value),
+                "department": str(e.department.value) if hasattr(e, 'department') and e.department else "—",
+                "title": str(e.title.value) if hasattr(e, 'title') and e.title else "—",
+                "bad_pwd_count": int(e.badPwdCount.value) if hasattr(e, 'badPwdCount') and e.badPwdCount else 0,
+            })
+        return users
+
 ad_service = ActiveDirectoryService()

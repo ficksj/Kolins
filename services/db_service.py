@@ -36,9 +36,18 @@ def init_db():
             )
         """)
 
+        # Таблица отслеживания отправленных алертов (чтобы не спамить)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sent_alerts (
+                alert_key TEXT PRIMARY KEY,
+                alert_type TEXT NOT NULL,
+                sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         conn.commit()
         conn.close()
-        logger.info("База данных успешно инициализирована (таблицы user_pc_sessions, user_original_ou)")
+        logger.info("База данных успешно инициализирована (таблицы user_pc_sessions, user_original_ou, sent_alerts)")
     except Exception as e:
         logger.error(f"Ошибка инициализации БД: {e}")
 
@@ -134,6 +143,38 @@ def remove_original_ou(username: str):
         conn.close()
     except Exception as e:
         logger.error(f"Ошибка удаления исходного OU: {e}")
+
+def is_alert_sent(alert_key: str) -> bool:
+    """Проверяет, отправлялся ли алерт за последние 12 часов"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 1 FROM sent_alerts 
+            WHERE alert_key = ? AND datetime(sent_at) > datetime('now', '-12 hours')
+        """, (alert_key,))
+        row = cursor.fetchone()
+        conn.close()
+        return row is not None
+    except Exception as e:
+        logger.error(f"Ошибка проверки алерта: {e}")
+        return False
+
+def record_alert_sent(alert_key: str, alert_type: str = "lockout"):
+    """Фиксирует факт отправки алерта"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO sent_alerts (alert_key, alert_type, sent_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(alert_key) DO UPDATE SET
+                sent_at = CURRENT_TIMESTAMP
+        """, (alert_key, alert_type))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.error(f"Ошибка записи отправленного алерта: {e}")
 
 # Инициализируем БД при импорте
 init_db()
