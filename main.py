@@ -10,7 +10,6 @@ from handlers import routers
 from middlewares.auth_middleware import AdminAuthMiddleware
 from middlewares.delete_message_middleware import DeleteUserMessageMiddleware
 from services.logger_service import get_logger
-from services.ad_monitor_worker import start_ad_monitor_worker
 
 logger = get_logger("Main")
 
@@ -52,8 +51,6 @@ async def main():
     me = await bot.get_me()
     logger.info(f"Бот успешно авторизован в Telegram: {me.first_name} (@{me.username})")
     logger.info("Запуск бота Kolins (Polling)...")
-    # Запуск фонового мониторинга Active Directory (алерты о блокировках)
-    asyncio.create_task(start_ad_monitor_worker(bot))
     await bot.delete_webhook(drop_pending_updates=True)
     
     try:
