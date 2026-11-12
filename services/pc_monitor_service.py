@@ -3,7 +3,7 @@ import subprocess
 import json
 import re
 from services.logger_service import get_logger
-from services.db_service import save_user_pc_session
+from services.db_service import save_user_pc_session, get_pc_user_session
 
 logger = get_logger("PCMonitor")
 
@@ -81,31 +81,46 @@ def get_pc_logged_user_quser(target_pc: str) -> str | None:
         return None
 
 def get_pc_logged_user(pc_name: str, dns_name: str = "") -> str | None:
-    """Получение текущего залогиненного пользователя (quser -> WMI PowerShell) с кэшированием в БД"""
+    """
+    Кроссплатформенное получение активного пользователя ПК:
+    1. Проверка живого сеанса через quser (если Windows)
+    2. WMI запрос Win32_ComputerSystem (если Windows)
+    3. Персистентный кэш сессий из БД SQLite (работает 100% стабильно на Linux и Windows)
+    """
     target = dns_name if dns_name and dns_name != "—" else pc_name
+    user = None
     
-    # 1. quser
-    user = get_pc_logged_user_quser(target)
-    if not user and target != pc_name:
-        user = get_pc_logged_user_quser(pc_name)
+    # 1. quser (только на Windows хостах)
+    import platform
+    if platform.system().lower() == "windows":
+        user = get_pc_logged_user_quser(target)
+        if not user and target != pc_name:
+            user = get_pc_logged_user_quser(pc_name)
 
-    # 2. WMI
+        # 2. WMI опрос через PowerShell
+        if not user:
+            safe_pc_name = pc_name.replace("'", "''")
+            script = f"""
+            try {{
+                $s = Get-WmiObject -Class Win32_ComputerSystem -ComputerName '{safe_pc_name}' -ErrorAction Stop
+                if ($s.UserName) {{ Write-Output $s.UserName }} else {{ Write-Output "__NOBODY__" }}
+            }} catch {{
+                Write-Output "__ERROR__"
+            }}
+            """
+            output = run_ps_cmd(script, timeout=6)
+            if output and output not in ("__ERROR__", "__NOBODY__"):
+                user = output.split(chr(92))[-1] if chr(92) in output else output
+                user = user.strip().lower()
+
+    # 3. Если живой опрос недоступен (например, на сервере Linux), читаем сохраненную сессию из SQLite
     if not user:
-        safe_pc_name = pc_name.replace("'", "''")
-        script = f"""
-        try {{
-            $s = Get-WmiObject -Class Win32_ComputerSystem -ComputerName '{safe_pc_name}' -ErrorAction Stop
-            if ($s.UserName) {{ Write-Output $s.UserName }} else {{ Write-Output "__NOBODY__" }}
-        }} catch {{
-            Write-Output "__ERROR__"
-        }}
-        """
-        output = run_ps_cmd(script, timeout=8)
-        if output and output not in ("__ERROR__", "__NOBODY__"):
-            user = output.split("\\")[-1] if "\\" in output else output
-            user = user.strip().lower()
+        saved = get_pc_user_session(pc_name)
+        if saved and saved.get("username"):
+            user = saved["username"]
+            logger.debug(f"Пользователь ПК {pc_name} получен из кэша БД: {user}")
 
-    # 3. Кэширование
+    # 4. Если пользователь получен, актуализируем в БД
     if user:
         save_user_pc_session(user, pc_name, dns_name)
 

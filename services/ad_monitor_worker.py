@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 from aiogram import Bot
+from aiogram.exceptions import TelegramRetryAfter
 import config
 from services.ad_service import ad_service
 from services.db_service import is_alert_sent, record_alert_sent
@@ -16,7 +17,7 @@ from services.rich_message_service import (
 logger = get_logger("ADMonitorWorker")
 
 async def check_locked_accounts(bot: Bot):
-    """Проверка заблокированных учетных записей и отправка алертов"""
+    """Проверка заблокированных учетных записей и отправка алертов с ограничением частоты (rate limit)"""
     if not config.LOG_CHAT_ID:
         return
     try:
@@ -50,9 +51,18 @@ async def check_locked_accounts(bot: Bot):
                 ]
             )
 
-            await send_rich_to_chat(bot, config.LOG_CHAT_ID, card)
-            record_alert_sent(alert_key, "lockout")
-            logger.info(f"Отправлен алерт о блокировке пользователя: {username}")
+            try:
+                await send_rich_to_chat(bot, config.LOG_CHAT_ID, card)
+                record_alert_sent(alert_key, "lockout")
+                logger.info(f"Отправлен алерт о блокировке пользователя: {username}")
+                # Пауза 1.5 секунды между алертами, чтобы не превысить лимиты Telegram Flood Control
+                await asyncio.sleep(1.5)
+            except TelegramRetryAfter as e:
+                logger.warning(f"Flood limit Telegram, ожидание {e.retry_after} сек...")
+                await asyncio.sleep(e.retry_after + 1)
+                break
+            except Exception as e:
+                logger.error(f"Не удалось отправить алерт для {username}: {e}")
 
     except Exception as e:
         logger.error(f"Ошибка в фоновой проверке блокировок: {e}")

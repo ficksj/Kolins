@@ -100,6 +100,35 @@ def get_user_pc_session(username: str) -> dict | None:
         logger.error(f"Ошибка получения сессии из БД: {e}")
         return None
 
+
+def get_pc_user_session(pc_name: str) -> dict | None:
+    """Получение сохраненного пользователя ПК из БД (обратный поиск по имени ПК)"""
+    if not pc_name:
+        return None
+    pc_clean = pc_name.strip()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT username, dns_name, updated_at
+            FROM user_pc_sessions
+            WHERE UPPER(pc_name) = UPPER(?) OR UPPER(dns_name) LIKE UPPER(?)
+            ORDER BY updated_at DESC
+            LIMIT 1
+        """, (pc_clean, f"{pc_clean}.%"))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return {
+                "username": row[0],
+                "dns_name": row[1],
+                "updated_at": row[2]
+            }
+        return None
+    except Exception as e:
+        logger.error(f"Ошибка получения сессии по ПК из БД: {e}")
+        return None
+
 def save_original_ou(username: str, original_ou: str):
     """Сохранение исходного OU пользователя"""
     username_clean = username.strip().lower()
