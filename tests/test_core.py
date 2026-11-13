@@ -397,6 +397,24 @@ class CoreServicesAndHandlersTests(unittest.TestCase):
             self.assertTrue(stats["aborted"])
             self.assertLessEqual(mock_probe.call_count, 3)
 
+    def test_edit_rich_ignores_not_modified(self):
+        from aiogram.exceptions import TelegramBadRequest
+        from services import rich_message_service
+
+        fake_msg = MagicMock()
+        fake_msg.edit_text = AsyncMock(
+            side_effect=TelegramBadRequest(method=MagicMock(), message="Bad Request: message is not modified")
+        )
+        res = asyncio.run(rich_message_service.edit_rich(fake_msg, "<b>Same</b>"))
+        self.assertIs(res, fake_msg)
+
+        fake_bot = MagicMock()
+        fake_bot.edit_message_text = AsyncMock(
+            side_effect=TelegramBadRequest(method=MagicMock(), message="Bad Request: message is not modified")
+        )
+        res2 = asyncio.run(rich_message_service.edit_rich_by_ids(fake_bot, 123, 456, "<b>Same</b>"))
+        self.assertIsNone(res2)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

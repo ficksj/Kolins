@@ -32,7 +32,10 @@ async def edit_rich(message: Message, html: str):
     try:
         return await message.edit_text(rich_message=rich_message(html), parse_mode=None)
     except TelegramBadRequest as error:
-        if "message can't be edited" not in str(error).lower():
+        err_lower = str(error).lower()
+        if "message is not modified" in err_lower:
+            return message
+        if "message can't be edited" not in err_lower:
             raise
         logger.warning(
             "Rich message %s in chat %s is not editable; sending updated card instead",
@@ -52,7 +55,10 @@ async def edit_rich_by_ids(bot, chat_id: int | str, message_id: int, html: str):
             parse_mode=None,
         )
     except TelegramBadRequest as error:
-        if "message can't be edited" not in str(error).lower():
+        err_lower = str(error).lower()
+        if "message is not modified" in err_lower:
+            return None
+        if "message can't be edited" not in err_lower:
             raise
         logger.warning(
             "Rich message %s in chat %s is not editable; sending updated card instead",
