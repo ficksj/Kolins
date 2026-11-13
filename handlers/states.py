@@ -7,3 +7,11 @@ class UserSearchState(StatesGroup):
 
 class PCSearchState(StatesGroup):
     waiting_for_query = State()
+
+
+class GroupSearchState(StatesGroup):
+    waiting_for_query = State()
+
+
+class PCBindState(StatesGroup):
+    waiting_for_pc = State()

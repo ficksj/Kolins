@@ -4,7 +4,7 @@ from aiogram import Bot
 from aiogram.exceptions import TelegramRetryAfter
 import config
 from services.ad_service import ad_service
-from services.db_service import is_alert_sent, record_alert_sent
+from services.db_service import is_alert_sent, record_alert_sent, get_setting
 from services.logger_service import get_logger
 from services.rich_message_service import (
     render_bubble_card,
@@ -15,13 +15,35 @@ from services.rich_message_service import (
 )
 
 logger = get_logger("ADMonitorWorker")
+_baseline_seeded: bool = False
+
+
+def reset_lockout_baseline():
+    """Сбрасывает baseline при переключении тумблера алертов."""
+    global _baseline_seeded
+    _baseline_seeded = False
+
 
 async def check_locked_accounts(bot: Bot):
-    """Проверка заблокированных учетных записей и отправка алертов с ограничением частоты (rate limit)"""
+    """Проверка новых заблокированных учетных записей (только если включено в настройках)."""
+    global _baseline_seeded
+    if get_setting("lockout_alerts_enabled", "0") != "1":
+        _baseline_seeded = False
+        return
     if not config.LOG_CHAT_ID:
         return
     try:
         locked_users = await asyncio.to_thread(ad_service.get_locked_users)
+        if not _baseline_seeded:
+            # На первом цикле после запуска/включения фиксируем текущие блокировки без спама в чат
+            for u in locked_users or []:
+                uname = u.get("username")
+                if uname:
+                    alert_key = f"lockout:{uname}:{datetime.date.today().isoformat()}"
+                    record_alert_sent(alert_key, "lockout")
+            _baseline_seeded = True
+            logger.info(f"Lockout baseline зафиксирован ({len(locked_users or [])} записей), спам исключен.")
+            return
         if not locked_users:
             return
 

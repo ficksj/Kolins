@@ -6,9 +6,12 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
 
 import config
+from aiogram.types import ErrorEvent
 from handlers import routers
 from middlewares.auth_middleware import AdminAuthMiddleware
 from middlewares.delete_message_middleware import DeleteUserMessageMiddleware
+from services.ad_monitor_worker import start_ad_monitor_worker
+from services.pc_background_worker import start_pc_background_worker
 from services.logger_service import get_logger
 
 logger = get_logger("Main")
@@ -48,13 +51,40 @@ async def main():
     for r in routers:
         dp.include_router(r)
 
+    @dp.errors()
+    async def global_error_handler(event: ErrorEvent):
+        logger.exception(f"Необработанная ошибка бота: {event.exception}", exc_info=event.exception)
+        upd = event.update
+        err_text = "⚠️ Произошла внутренняя ошибка при обработке запроса. Подробности записаны в журнал."
+        try:
+            if upd.callback_query:
+                try:
+                    await upd.callback_query.answer("⚠️ Ошибка выполнения", show_alert=False)
+                except Exception:
+                    pass
+                if upd.callback_query.message:
+                    await upd.callback_query.message.answer(err_text)
+            elif upd.message:
+                await upd.message.answer(err_text)
+        except Exception:
+            pass
+        return True
+
     me = await bot.get_me()
     logger.info(f"Бот успешно авторизован в Telegram: {me.first_name} (@{me.username})")
     logger.info("Запуск бота Kolins (Polling)...")
     await bot.delete_webhook(drop_pending_updates=True)
-    
+
+    ad_monitor_task = asyncio.create_task(start_ad_monitor_worker(bot, interval_seconds=900))
+    pc_worker_task = asyncio.create_task(start_pc_background_worker(interval_seconds=2700))
+
     try:
-        await dp.start_polling(bot)
+        try:
+            await dp.start_polling(bot)
+        finally:
+            for t in (ad_monitor_task, pc_worker_task):
+                t.cancel()
+            await asyncio.gather(ad_monitor_task, pc_worker_task, return_exceptions=True)
     finally:
         await bot.session.close()
 

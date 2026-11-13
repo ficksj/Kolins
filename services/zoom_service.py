@@ -10,8 +10,18 @@ class ZoomService:
         self.client_id = getattr(config, "ZOOM_CLIENT_ID", "")
         self.client_secret = getattr(config, "ZOOM_CLIENT_SECRET", "")
 
+    def is_configured(self) -> bool:
+        """Проверяет, заданы ли учетные данные Zoom Server-to-Server OAuth."""
+        return bool(
+            str(self.account_id).strip()
+            and str(self.client_id).strip()
+            and str(self.client_secret).strip()
+        )
+
     async def _get_access_token(self) -> str | None:
         """Получение OAuth-токена Zoom"""
+        if not self.is_configured():
+            return None
         url = "https://zoom.us/oauth/token"
         params = {"grant_type": "account_credentials", "account_id": self.account_id}
         
@@ -33,14 +43,14 @@ class ZoomService:
 
     async def create_meeting(self, topic: str) -> dict | None:
         """Создание мгновенной Zoom-конференции"""
+        if not self.is_configured():
+            logger.warning("Zoom API не настроен: не заданы ZOOM_ACCOUNT_ID / ZOOM_CLIENT_ID / ZOOM_CLIENT_SECRET.")
+            return None
+
         token = await self._get_access_token()
         if not token:
-            # Фолбэк-заглушка для изолированных сетей без прямого выхода в Zoom API
-            logger.warning("Zoom API недоступен, генерируем стандартную ссылку на комнату.")
-            return {
-                "join_url": "https://zoom.us/j/1234567890?pwd=bank_meeting_pass",
-                "password": "bank_meeting_pass"
-            }
+            logger.warning("Zoom API недоступен: не удалось получить OAuth-токен.")
+            return None
 
         url = "https://api.zoom.us/v2/users/me/meetings"
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}

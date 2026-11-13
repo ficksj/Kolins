@@ -1,5 +1,7 @@
-import io
 import datetime
+from html import escape as xml_escape
+import io
+import os
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -75,7 +77,18 @@ class NumberedCanvas(canvas.Canvas):
         self.restoreState()
 
 
-def generate_equipment_act(user_details: dict, pc_details: dict | None = None) -> io.BytesIO:
+RU_MONTHS = {
+    1: "января", 2: "февраля", 3: "марта", 4: "апреля",
+    5: "мая", 6: "июня", 7: "июля", 8: "августа",
+    9: "сентября", 10: "октября", 11: "ноября", 12: "декабря",
+}
+
+
+def generate_equipment_act(
+    user_details: dict,
+    pc_details: dict | None = None,
+    hw_info: dict | None = None,
+) -> io.BytesIO:
     """Генерирует официальный Акт приема-передачи оборудования в формате PDF."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -178,17 +191,19 @@ def generate_equipment_act(user_details: dict, pc_details: dict | None = None) -
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#0f172a"), spaceAfter=12))
 
     # 2. Название документа
-    current_date = datetime.datetime.now().strftime("%d.%m.%Y")
-    act_num = datetime.datetime.now().strftime("%Y%m%d") + "-" + str(user_details.get("username", "001"))[:6].upper()
+    now_dt = datetime.datetime.now()
+    current_date = now_dt.strftime("%d.%m.%Y")
+    ru_month = RU_MONTHS.get(now_dt.month, now_dt.strftime("%m"))
+    act_num = now_dt.strftime("%Y%m%d") + "-" + xml_escape(str(user_details.get("username", "001"))[:8].upper())
     
     story.append(Paragraph(f"АКТ ПРИЕМА-ПЕРЕДАЧИ ОБОРУДОВАНИЯ № {act_num}", style_title))
     story.append(Paragraph(f"г. Алматы &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Дата: <b>{current_date} г.</b>", style_subtitle))
     
     # 3. Вводный текст
-    fio = user_details.get("display_name", "Сотрудник Банка")
-    dept = user_details.get("department", "Структурное подразделение")
-    title = user_details.get("title", "Должность")
-    login = user_details.get("username", "—")
+    fio = xml_escape(str(user_details.get("display_name") or "Сотрудник Банка"))
+    dept = xml_escape(str(user_details.get("department") or "Структурное подразделение"))
+    title = xml_escape(str(user_details.get("title") or "Должность"))
+    login = xml_escape(str(user_details.get("username") or "—"))
     
     preamble = (
         f"Настоящий Акт составлен о том, что Управление Информационных Технологий АО «KDB Bank» передает, "
@@ -200,10 +215,17 @@ def generate_equipment_act(user_details: dict, pc_details: dict | None = None) -
     story.append(Spacer(1, 3 * mm))
 
     # 4. Таблица передаваемого оборудования
-    pc_name = pc_details.get("name", "Ноутбук / Рабочая станция") if pc_details else "Ноутбук Lenovo ThinkPad"
-    pc_os = pc_details.get("os", "Microsoft Windows 10/11 Enterprise") if pc_details else "Windows Enterprise"
-    pc_desc = pc_details.get("description", "Рабочая станция сотрудника") if pc_details else "Корпоративный ноутбук"
-    pc_dns = pc_details.get("dns_name", f"{pc_name}.kdb.kz") if pc_details else "kdb.kz"
+    pc_name = xml_escape(str(pc_details.get("name") or "Рабочая станция")) if pc_details else "Ноутбук Lenovo ThinkPad"
+    pc_os = xml_escape(str(pc_details.get("os") or "Microsoft Windows 10/11 Pro")) if pc_details else "Windows Pro"
+    pc_desc = xml_escape(str(pc_details.get("description") or "Рабочая станция сотрудника")) if pc_details else "Корпоративный ноутбук"
+    pc_dns = xml_escape(str(pc_details.get("dns_name") or f"{pc_name}.kdb.kz")) if pc_details else "kdb.kz"
+
+    hw_valid = hw_info and isinstance(hw_info, dict) and not hw_info.get("_error")
+    hw_model = xml_escape(str(hw_valid and hw_info.get("model") or "Рабочая станция / Ноутбук"))
+    hw_maker = xml_escape(str(hw_valid and hw_info.get("manufacturer") or ""))
+    hw_sn = xml_escape(str(hw_valid and hw_info.get("serial_number") or "—"))
+    model_line = f"{hw_maker} {hw_model}".strip() if hw_valid and hw_info.get("model") not in (None, "—", "") else "Рабочая станция / Ноутбук"
+    sn_line = f"<br/><font size=7.5 color='#334155'>S/N: <b>{hw_sn}</b></font>" if hw_sn and hw_sn != "—" else ""
 
     items_data = [
         [
@@ -215,7 +237,7 @@ def generate_equipment_act(user_details: dict, pc_details: dict | None = None) -
         ],
         [
             Paragraph("1", style_table_cell),
-            Paragraph(f"<b>Рабочая станция / Ноутбук</b><br/><font size=7.5 color='#64748b'>{pc_desc}</font>", style_table_cell),
+            Paragraph(f"<b>{model_line}</b><br/><font size=7.5 color='#64748b'>{pc_desc}</font>{sn_line}", style_table_cell),
             Paragraph(f"<b>{pc_name}</b><br/><font size=7.5 color='#64748b'>{pc_dns}</font>", style_table_cell),
             Paragraph(pc_os, style_table_cell),
             Paragraph("1 шт.", style_table_cell),
@@ -270,8 +292,8 @@ def generate_equipment_act(user_details: dict, pc_details: dict | None = None) -
             Paragraph(f"Сотрудник:<br/><b>{fio}</b><br/><br/>_________________ / {fio} /<br/><font size=7 color='#64748b'>(подпись / расшифровка)</font>", style_sign_body),
         ],
         [
-            Paragraph(f"М.П. &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; «{current_date[:2]}» {datetime.datetime.now().strftime('%m')} 2026 г.", style_sign_body),
-            Paragraph(f"«{current_date[:2]}» {datetime.datetime.now().strftime('%m')} 2026 г.", style_sign_body),
+            Paragraph(f"М.П. &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; «{now_dt.day:02d}» {ru_month} {now_dt.year} г.", style_sign_body),
+            Paragraph(f"«{now_dt.day:02d}» {ru_month} {now_dt.year} г.", style_sign_body),
         ]
     ]
 
