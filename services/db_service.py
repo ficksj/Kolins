@@ -1,19 +1,28 @@
 from contextlib import contextmanager
 import os
 import sqlite3
+import config
 from services.logger_service import get_logger
 
 logger = get_logger("DBService")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_PATH = os.path.join(BASE_DIR, "database.db")
+_shared_db = getattr(config, "SHARED_DB_PATH", "") or os.getenv("SHARED_DB_PATH", "")
+DB_PATH = _shared_db.strip() if _shared_db.strip() else os.path.join(BASE_DIR, "database.db")
 
 
 @contextmanager
 def _get_conn(db_path: str | None = None):
-    """Открывает SQLite-соединение и гарантированно закрывает его при выходе из контекста."""
-    conn = sqlite3.connect(db_path or DB_PATH, timeout=15.0)
+    """Открывает SQLite-соединение с WAL/busy_timeout и гарантированно закрывает его при выходе из контекста."""
+    target_path = db_path or DB_PATH
+    parent_dir = os.path.dirname(os.path.abspath(target_path))
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+    conn = sqlite3.connect(target_path, timeout=15.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    conn.execute("PRAGMA busy_timeout=15000;")
     try:
         yield conn
     except Exception:

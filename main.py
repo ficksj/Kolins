@@ -72,7 +72,7 @@ async def main():
 
     me = await bot.get_me()
     logger.info(f"Бот успешно авторизован в Telegram: {me.first_name} (@{me.username})")
-    logger.info("Запуск бота Kolins (Polling)...")
+    logger.info("Запуск бота Testarossa HelpDesk Hub (Polling)...")
     await bot.delete_webhook(drop_pending_updates=True)
 
     ad_monitor_task = asyncio.create_task(start_ad_monitor_worker(bot, interval_seconds=900))

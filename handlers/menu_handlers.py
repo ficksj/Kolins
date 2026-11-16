@@ -58,8 +58,8 @@ def render_home(user_name: str, ad_connected: bool, pending_lotus: int = 0) -> s
     ]
 
     return render_bubble_card(
-        title="Kolins · Active Directory Hub",
-        badge="v2.1",
+        title="🏎 Testarossa · HelpDesk Hub",
+        badge="v3.0",
         body_lines=body,
         footer_note="Выберите действие в панели управления ниже:",
         buttons=buttons,

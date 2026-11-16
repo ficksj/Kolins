@@ -6,6 +6,8 @@
 
 # Local SQLite Database
 *.db
+*.db-shm
+*.db-wal
 *.db-journal
 *.sqlite
 *.sqlite3
@@ -15,16 +17,17 @@ database.db
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 venv/
 .venv/
 env/
 .env/
 
-# Logs
+# Logs & sensitive files
 logs/
 *.log
-
-# Sensitive local temp files
+*.id
+*.tar.gz
 users_db.json
 vendor/
 .impeccable/

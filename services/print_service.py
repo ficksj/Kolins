@@ -72,7 +72,7 @@ class NumberedCanvas(canvas.Canvas):
         self.setStrokeColor(colors.HexColor("#e2e8f0"))
         self.setLineWidth(0.5)
         self.line(15 * mm, 12 * mm, 195 * mm, 12 * mm)
-        self.drawString(15 * mm, 8 * mm, "АО «KDB Bank» · Управление Информационных Технологий (IT Department)")
+        self.drawString(15 * mm, 8 * mm, "АО «KDB Bank» · Управление Информационных Технологий (Testarossa · HelpDesk Control)")
         self.drawRightString(195 * mm, 8 * mm, f"Стр. {self._pageNumber} из {page_count}")
         self.restoreState()
 

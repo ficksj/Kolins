@@ -27,7 +27,7 @@ def reset_lockout_baseline():
 async def check_locked_accounts(bot: Bot):
     """Проверка новых заблокированных учетных записей (только если включено в настройках)."""
     global _baseline_seeded
-    if get_setting("lockout_alerts_enabled", "0") != "1":
+    if (await asyncio.to_thread(get_setting, "lockout_alerts_enabled", "0")) != "1":
         _baseline_seeded = False
         return
     if not config.LOG_CHAT_ID:
@@ -40,7 +40,7 @@ async def check_locked_accounts(bot: Bot):
                 uname = u.get("username")
                 if uname:
                     alert_key = f"lockout:{uname}:{datetime.date.today().isoformat()}"
-                    record_alert_sent(alert_key, "lockout")
+                    await asyncio.to_thread(record_alert_sent, alert_key, "lockout")
             _baseline_seeded = True
             logger.info(f"Lockout baseline зафиксирован ({len(locked_users or [])} записей), спам исключен.")
             return
@@ -52,7 +52,7 @@ async def check_locked_accounts(bot: Bot):
             alert_key = f"lockout:{username}:{datetime.date.today().isoformat()}"
             
             # Проверяем, отправляли ли уже алерт сегодня
-            if is_alert_sent(alert_key):
+            if await asyncio.to_thread(is_alert_sent, alert_key):
                 continue
 
             card = render_bubble_card(
@@ -75,7 +75,7 @@ async def check_locked_accounts(bot: Bot):
 
             try:
                 await send_rich_to_chat(bot, config.LOG_CHAT_ID, card)
-                record_alert_sent(alert_key, "lockout")
+                await asyncio.to_thread(record_alert_sent, alert_key, "lockout")
                 logger.info(f"Отправлен алерт о блокировке пользователя: {username}")
                 # Пауза 1.5 секунды между алертами, чтобы не превысить лимиты Telegram Flood Control
                 await asyncio.sleep(1.5)

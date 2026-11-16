@@ -53,3 +53,7 @@ ZOOM_CLIENT_SECRET = os.getenv("ZOOM_CLIENT_SECRET", "")
 
 LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID")) if os.getenv("LOG_CHAT_ID") else None
 ADMIN_IDS = [int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()]
+
+SHARED_DB_PATH = os.getenv("SHARED_DB_PATH", "")
+WEBAPP_API_TOKEN = os.getenv("WEBAPP_API_TOKEN", "")
+BOT_BRAND_NAME = "Testarossa · HelpDesk Hub"

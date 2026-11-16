@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Kolins · AD Hub</title>
+    <title>Testarossa · HelpDesk Control</title>
     <!-- Telegram WebApp SDK -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <!-- Lucide Icons -->
@@ -553,7 +553,7 @@
                     <i data-lucide="shield" style="width:20px;height:20px;"></i>
                 </div>
                 <div class="brand-text">
-                    <h1>Kolins · AD Hub</h1>
+                    <h1>Testarossa · HelpDesk Control</h1>
                     <span>kdb.kz · Active Directory</span>
                 </div>
             </div>
@@ -634,12 +634,20 @@
             if (tg.setBackgroundColor) tg.setBackgroundColor('#090d16');
         }
 
+        function apiFetch(url, options = {}) {
+            const headers = new Headers(options.headers || {});
+            if (tg && tg.initData) {
+                headers.set('X-Telegram-Init-Data', tg.initData);
+            }
+            return fetch(url, { ...options, headers });
+        }
+
         let currentTab = 'users';
         let searchDebounce = null;
 
         async function initDashboard() {
             try {
-                const res = await fetch('/api/stats');
+                const res = await apiFetch('/api/stats');
                 const data = await res.json();
                 if (data.ok && data.stats) {
                     document.getElementById('statUsers').innerText = data.stats.total_users;
@@ -706,7 +714,7 @@
 
             try {
                 const endpoint = currentTab === 'users' ? `/api/search/users?q=${encodeURIComponent(query)}` : `/api/search/pcs?q=${encodeURIComponent(query)}`;
-                const res = await fetch(endpoint);
+                const res = await apiFetch(endpoint);
                 const data = await res.json();
                 loader.style.display = 'none';
 
@@ -935,7 +943,7 @@
             haptic('medium');
             openModal('Поиск ПК сотрудника', '<div class="plain-spinner"></div><div style="text-align:center; color:var(--text-muted);">Опрос активных сессий в домене...</div>');
             try {
-                const res = await fetch(`/api/user/${username}/pc`);
+                const res = await apiFetch(`/api/user/${username}/pc`);
                 const data = await res.json();
                 if (data.ok && data.pc_name) {
                     haptic('success');
@@ -960,7 +968,7 @@
             haptic('medium');
             if (!confirm(`Сбросить пароль сотрудника ${username} на ASDfg123+?`)) return;
             try {
-                const res = await fetch(`/api/user/${username}/reset_password`, { method: 'POST' });
+                const res = await apiFetch(`/api/user/${username}/reset_password`, { method: 'POST' });
                 const data = await res.json();
                 if (data.ok) {
                     haptic('success');
@@ -980,7 +988,7 @@
         async function unlockUser(username) {
             haptic('medium');
             try {
-                const res = await fetch(`/api/user/${username}/unlock`, { method: 'POST' });
+                const res = await apiFetch(`/api/user/${username}/unlock`, { method: 'POST' });
                 const data = await res.json();
                 if (data.ok) {
                     haptic('success');
@@ -998,7 +1006,7 @@
             haptic('medium');
             if (!confirm(`Переместить ${username} в OU=notebooklenovo для сертификата?`)) return;
             try {
-                const res = await fetch(`/api/user/${username}/cert`, { method: 'POST' });
+                const res = await apiFetch(`/api/user/${username}/cert`, { method: 'POST' });
                 const data = await res.json();
                 if (data.ok) {
                     haptic('success');
@@ -1014,7 +1022,7 @@
         async function revertUserOU(username) {
             haptic('medium');
             try {
-                const res = await fetch(`/api/user/${username}/revert`, { method: 'POST' });
+                const res = await apiFetch(`/api/user/${username}/revert`, { method: 'POST' });
                 const data = await res.json();
                 if (data.ok) {
                     haptic('success');
@@ -1031,7 +1039,7 @@
             haptic('medium');
             if (!confirm(`Переместить ПК ${pcName} в KDB notebooklenovo?`)) return;
             try {
-                const res = await fetch(`/api/pc/${pcName}/move`, { method: 'POST' });
+                const res = await apiFetch(`/api/pc/${pcName}/move`, { method: 'POST' });
                 const data = await res.json();
                 if (data.ok) {
                     haptic('success');
@@ -1052,7 +1060,7 @@
 
         async function deletePC(pcName) {
             try {
-                const res = await fetch(`/api/pc/${pcName}/delete`, { method: 'POST' });
+                const res = await apiFetch(`/api/pc/${pcName}/delete`, { method: 'POST' });
                 const data = await res.json();
                 if (data.ok) {
                     haptic('success');
@@ -1071,7 +1079,7 @@
             const topic = document.getElementById('zoomTopic').value.trim() || 'Техподдержка AD';
             openModal('Генерация Zoom...', '<div class="plain-spinner"></div><div style="text-align:center; color:var(--text-muted);">Создание комнаты через Zoom API...</div>');
             try {
-                const res = await fetch('/api/zoom', {
+                const res = await apiFetch('/api/zoom', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ topic })

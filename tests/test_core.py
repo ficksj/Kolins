@@ -1,10 +1,13 @@
 import asyncio
 import importlib
 import os
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import config
 from services import db_service
@@ -350,7 +353,8 @@ class CoreServicesAndHandlersTests(unittest.TestCase):
         long_user = "a_very_long_sAMAccount"[:20]
         long_pc = "N10453-WIN11-TEST"[:15]
         home_html = render_home("Admin", True, pending_lotus=2)
-        self.assertIn("Kolins", home_html)
+        self.assertIn("Testarossa", home_html)
+        self.assertIn("v3.0", home_html)
         self.assertIn("Lotus ID (2)", home_html)
 
         stats_html = render_stats({"total_users": 100, "active_users": 90, "disabled_users": 10, "locked_users": 1, "total_computers": 50, "stale_computers": 5}, 12)
@@ -496,6 +500,63 @@ class CoreServicesAndHandlersTests(unittest.TestCase):
             last_card = mock_edit.await_args_list[-1].args[1]
             self.assertIn("N10102", last_card)
             self.assertIn("кэша", last_card)
+
+    def test_webapp_api_auth_middleware(self):
+        import hashlib
+        import hmac
+        import json
+        from urllib.parse import urlencode
+        from webapp import server
+
+        bot_token = "123456:ABCDEF_TEST_SECRET_TOKEN"
+        admin_id = 6133663021
+
+        with patch.object(config, "BOT_TOKEN", bot_token), \
+             patch.object(config, "ADMIN_IDS", [admin_id]), \
+             patch.object(config, "WEBAPP_API_TOKEN", "my_super_api_secret"):
+            # 1. Valid Telegram Init Data for Admin
+            user_json = json.dumps({"id": admin_id, "first_name": "Admin"})
+            params = {"auth_date": "1700000000", "query_id": "AAHdF6IQAAAAAN0XohDhrOrc", "user": user_json}
+            check_str = "\n".join(f"{k}={v}" for k, v in sorted(params.items()))
+            secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
+            valid_hash = hmac.new(secret_key, check_str.encode("utf-8"), hashlib.sha256).hexdigest()
+            params["hash"] = valid_hash
+            init_data_str = urlencode(params)
+
+            verified = server.verify_telegram_init_data(init_data_str)
+            self.assertIsNotNone(verified)
+            self.assertEqual(verified["id"], admin_id)
+
+            # 2. Tampered hash -> rejected
+            params["hash"] = "0" * 64
+            self.assertIsNone(server.verify_telegram_init_data(urlencode(params)))
+
+            # 3. Non-admin user -> rejected
+            non_admin_json = json.dumps({"id": 999999, "first_name": "Stranger"})
+            params2 = {"auth_date": "1700000000", "user": non_admin_json}
+            check_str2 = "\n".join(f"{k}={v}" for k, v in sorted(params2.items()))
+            params2["hash"] = hmac.new(secret_key, check_str2.encode("utf-8"), hashlib.sha256).hexdigest()
+            self.assertIsNone(server.verify_telegram_init_data(urlencode(params2)))
+
+            # 4. API Token check
+            self.assertTrue(server.verify_api_token("my_super_api_secret"))
+            self.assertFalse(server.verify_api_token("wrong_token"))
+            self.assertFalse(server.verify_api_token(""))
+
+            # 5. Middleware returns 401 on unauthorized /api/stats and passes on valid token
+            fake_req_unauth = SimpleNamespace(path="/api/stats", headers={})
+            handler_mock = AsyncMock(return_value="OK")
+            resp_unauth = asyncio.run(server.api_auth_middleware(fake_req_unauth, handler_mock))
+            self.assertEqual(resp_unauth.status, 401)
+            handler_mock.assert_not_awaited()
+
+            fake_req_auth = {"tg_user": None}
+            class DummyReq(dict):
+                path = "/api/stats"
+                headers = {"X-API-Token": "my_super_api_secret"}
+            res_ok = asyncio.run(server.api_auth_middleware(DummyReq(), handler_mock))
+            self.assertEqual(res_ok, "OK")
+            handler_mock.assert_awaited_once()
 
 
 if __name__ == "__main__":

@@ -1,10 +1,15 @@
 import asyncio
+import hashlib
+import hmac
+import json
 import os
 import sys
+from urllib.parse import parse_qsl
 
 # Добавляем корень проекта в sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
+import config
 from aiohttp import web
 from services.ad_service import ad_service
 from services.db_service import get_user_pc_session, save_original_ou, get_original_ou, remove_original_ou
@@ -16,6 +21,58 @@ logger = get_logger("WebAppServer")
 
 TARGET_PC_OU = "OU=KDB notebooklenovo,OU=KDB Nout,DC=kdb,DC=kz"
 CERT_USER_OU = "OU=notebooklenovo,OU=Bank Divisions,OU=KDB Users,DC=kdb,DC=kz"
+
+
+def verify_telegram_init_data(init_data: str, bot_token: str | None = None) -> dict | None:
+    """Проверяет подпись X-Telegram-Init-Data по алгоритму Telegram WebApp (HMAC-SHA256) и членство в ADMIN_IDS."""
+    token = (bot_token if bot_token is not None else getattr(config, "BOT_TOKEN", "")) or ""
+    token = token.strip()
+    if not init_data or not token:
+        return None
+    try:
+        parsed = dict(parse_qsl(init_data, keep_blank_values=True))
+        received_hash = parsed.pop("hash", None)
+        if not received_hash:
+            return None
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed.items()))
+        secret_key = hmac.new(b"WebAppData", token.encode("utf-8"), hashlib.sha256).digest()
+        calculated_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(calculated_hash, received_hash):
+            return None
+        user_raw = parsed.get("user")
+        if not user_raw:
+            return None
+        user_obj = json.loads(user_raw)
+        user_id = int(user_obj.get("id", 0))
+        admin_ids = getattr(config, "ADMIN_IDS", []) or []
+        if user_id not in admin_ids:
+            return None
+        return user_obj
+    except Exception:
+        return None
+
+
+def verify_api_token(api_token: str) -> bool:
+    """Проверяет заголовок X-API-Token на совпадение с WEBAPP_API_TOKEN (или BOT_TOKEN, если WEBAPP_API_TOKEN не задан)."""
+    if not api_token:
+        return False
+    expected = (getattr(config, "WEBAPP_API_TOKEN", "") or os.getenv("WEBAPP_API_TOKEN", "") or getattr(config, "BOT_TOKEN", "") or "").strip()
+    if not expected:
+        return False
+    return hmac.compare_digest(api_token.strip(), expected)
+
+
+@web.middleware
+async def api_auth_middleware(request: web.Request, handler):
+    """Защита всех /api/* эндпоинтов: проверка X-Telegram-Init-Data или X-API-Token."""
+    if request.path.startswith("/api/"):
+        init_data = request.headers.get("X-Telegram-Init-Data", "")
+        api_token = request.headers.get("X-API-Token", "")
+        user = verify_telegram_init_data(init_data)
+        if not user and not verify_api_token(api_token):
+            return web.json_response({"ok": False, "error": "Unauthorized"}, status=401)
+        request["tg_user"] = user
+    return await handler(request)
 
 async def handle_index(request):
     """Отдача главного HTML-интерфейса Mini App"""
@@ -98,7 +155,7 @@ async def api_user_pc(request):
         return web.json_response({"ok": False, "error": "No username"})
 
     # 1. Проверяем кэш БД
-    session = get_user_pc_session(username)
+    session = await asyncio.to_thread(get_user_pc_session, username)
     if session:
         cached_pc = session["pc_name"]
         cached_dns = session.get("dns_name") or cached_pc
@@ -139,13 +196,13 @@ async def api_move_user_cert(request):
     original_ou = ",".join(details["dn"].split(",")[1:])
     success = await asyncio.to_thread(ad_service.move_user, details["dn"], CERT_USER_OU)
     if success:
-        save_original_ou(username, original_ou)
+        await asyncio.to_thread(save_original_ou, username, original_ou)
     return web.json_response({"ok": success, "target_ou": CERT_USER_OU})
 
 async def api_revert_user(request):
     """Возврат пользователя в исходный OU"""
     username = request.match_info.get("username", "").strip()
-    original_ou = get_original_ou(username)
+    original_ou = await asyncio.to_thread(get_original_ou, username)
     if not original_ou:
         return web.json_response({"ok": False, "error": "No original OU found"})
     
@@ -155,7 +212,7 @@ async def api_revert_user(request):
 
     success = await asyncio.to_thread(ad_service.move_user, details["dn"], original_ou)
     if success:
-        remove_original_ou(username)
+        await asyncio.to_thread(remove_original_ou, username)
     return web.json_response({"ok": success, "original_ou": original_ou})
 
 async def api_move_pc(request):
@@ -180,7 +237,7 @@ async def api_create_zoom(request):
     return web.json_response({"ok": False, "error": "Failed to create meeting"})
 
 def create_webapp() -> web.Application:
-    app = web.Application()
+    app = web.Application(middlewares=[api_auth_middleware])
     app.router.add_get("/", handle_index)
     app.router.add_get("/api/stats", api_stats)
     app.router.add_get("/api/search/users", api_search_users)

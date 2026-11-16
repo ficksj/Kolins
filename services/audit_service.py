@@ -39,7 +39,7 @@ async def send_audit_log(bot: Bot, admin: User, action: str, target: str, status
         badge=badge,
         body_lines=body,
         table_rows=table_rows,
-        footer_note="Автоматический аудит-лог безопасности Kolins"
+        footer_note="Автоматический аудит-лог безопасности Testarossa · HelpDesk Control"
     )
 
     try:
