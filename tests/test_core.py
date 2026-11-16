@@ -283,9 +283,16 @@ class CoreServicesAndHandlersTests(unittest.TestCase):
         self.assertFalse(pc_monitor_service.check_pc_online(""))
         parsed = pc_monitor_service._parse_quser_output(
             " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\n"
-            ">ivanov                console             1  Active      none   11.11.2026 09:00\n"
+            " olduser                                   1  Disc          10   10.11.2026 08:00\n"
+            ">ivanov                console             2  Active      none   11.11.2026 09:00\n"
         )
         self.assertEqual(parsed, "ivanov")
+        all_quser = pc_monitor_service._parse_quser_all_users(
+            " USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME\n"
+            " yakissikova           rdp-tcp#24        363  ЂЄвЁў\xad®          1  16.11.2026 9:01\n"
+            " oldrdp                                   2  Disc             5  16.11.2026 8:00\n"
+        )
+        self.assertEqual(all_quser, ["yakissikova", "oldrdp"])
 
     def test_ad_monitor_worker_opt_in_and_baseline(self):
         from services import ad_monitor_worker
@@ -458,6 +465,37 @@ class CoreServicesAndHandlersTests(unittest.TestCase):
         self.assertEqual(ev[0]["Id"], 1096)
         self.assertEqual(len(ev[0]["msg"]), 140)
         self.assertTrue(ev[0]["msg"].startswith("Line1 X"))
+
+    def test_find_pc_scan_and_user_pc_fallback(self):
+        from handlers import user_handlers
+
+        pcs = ["OFF01.kdb.kz", "ON01.kdb.kz", "ON02.kdb.kz"]
+        with patch.object(pc_monitor_service, "_is_windows", return_value=False), \
+             patch.object(pc_monitor_service, "_check_tcp_port", side_effect=lambda host, port, timeout=0.5: host != "OFF01.kdb.kz"), \
+             patch.object(
+                 pc_monitor_service,
+                 "get_pc_logged_user_detailed",
+                 side_effect=lambda short, dns, allow: (
+                     {"username": "other", "all_users": ["other", "target_u"], "source": "live", "updated_at": None, "error_code": None}
+                     if short == "ON02"
+                     else {"username": "someone", "all_users": ["someone"], "source": "live", "updated_at": None, "error_code": None}
+                 ),
+             ):
+            hit = asyncio.run(pc_monitor_service.find_pc_by_username_scan("target_u", pcs, max_concurrency=4))
+            self.assertEqual(hit, "ON02")
+
+        # _render_user_pc_lookup preserves cached PC on force_scan miss without conflict
+        fake_cb = MagicMock()
+        fake_cb.message = MagicMock()
+        with patch.object(user_handlers, "edit_rich", new_callable=AsyncMock) as mock_edit, \
+             patch.object(user_handlers, "get_user_pc_session", return_value={"pc_name": "N10102", "dns_name": "N10102.kdb.kz", "updated_at": "2026-11-12 10:51:55"}), \
+             patch.object(user_handlers.ad_service, "get_target_computers", return_value=["N10102.kdb.kz"]), \
+             patch.object(user_handlers, "find_pc_by_username_scan", new_callable=AsyncMock, return_value=None), \
+             patch.object(user_handlers, "check_pc_online", return_value=True):
+            asyncio.run(user_handlers._render_user_pc_lookup(fake_cb, "arakhimzhanova", force_scan=True))
+            last_card = mock_edit.await_args_list[-1].args[1]
+            self.assertIn("N10102", last_card)
+            self.assertIn("кэша", last_card)
 
 
 if __name__ == "__main__":

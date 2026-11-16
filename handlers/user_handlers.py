@@ -300,10 +300,10 @@ async def select_user_from_list(callback: CallbackQuery):
 async def _render_user_pc_lookup(callback: CallbackQuery, username: str, force_scan: bool = False):
     loading_card = render_bubble_card(
         title="💻 Поиск рабочего места...",
-        badge="Сканирование" if force_scan else "Проверка кэша и сети",
+        badge="Сканирование сети" if force_scan else "Проверка кэша и сети",
         body_lines=[
             f"Проверяем сессию сотрудника <code>{html_text(username)}</code>...",
-            "<i>Проверка кэша SQLite и опрос онлайн-компьютеров домена.</i>",
+            "<i>⏳ Проверка кэша SQLite и быстрый опрос WinRM (TCP 5985) по онлайн-ПК домена...</i>",
         ],
     )
     await edit_rich(callback.message, loading_card)
@@ -314,6 +314,7 @@ async def _render_user_pc_lookup(callback: CallbackQuery, username: str, force_s
     is_live = False
     is_online = False
     cached_pc_note = None
+    cached_conflict = False
 
     if session and not force_scan:
         cached_pc = session["pc_name"]
@@ -322,17 +323,19 @@ async def _render_user_pc_lookup(callback: CallbackQuery, username: str, force_s
         if is_online:
             res = await asyncio.to_thread(get_pc_logged_user_detailed, cached_pc, cached_dns, False)
             active_user = res.get("username")
-            if active_user and active_user.lower() == username.lower():
+            all_users = {u.lower() for u in (res.get("all_users") or ([active_user] if active_user else []))}
+            if username.lower() in all_users:
                 found_pc = cached_pc
                 dns_target = cached_dns
                 is_live = True
             elif active_user and active_user.lower() != username.lower():
+                cached_conflict = True
                 cached_pc_note = (
                     f"На ранее привязанном ПК <code>{html_text(cached_pc)}</code> сейчас работает "
-                    f"<code>{html_text(active_user)}</code>. Ищем новый ПК..."
+                    f"<code>{html_text(active_user)}</code>. Выполнен поиск нового ПК."
                 )
             else:
-                # ПК онлайн, но никто не залогинен или auth_denied -> помним кэш на случай неудачи скана
+                # ПК онлайн, но никто не залогинен или WinRM недоступен -> помним кэш на случай неудачи скана
                 found_pc = cached_pc
                 dns_target = cached_dns
         else:
@@ -350,6 +353,14 @@ async def _render_user_pc_lookup(callback: CallbackQuery, username: str, force_s
                 is_live = True
                 is_online = True
                 await asyncio.to_thread(save_user_pc_session, username, found_pc, dns_target)
+            elif session and not cached_conflict and not found_pc:
+                found_pc = session["pc_name"]
+                dns_target = session.get("dns_name") or found_pc
+                is_online = await asyncio.to_thread(check_pc_online, dns_target)
+                cached_pc_note = (
+                    f"Живое сканирование не обнаружило активную сессию <code>{html_text(username)}</code> — "
+                    f"показан последний известный ПК из кэша."
+                )
 
     if found_pc:
         if is_live:
@@ -360,7 +371,7 @@ async def _render_user_pc_lookup(callback: CallbackQuery, username: str, force_s
             badge = "Последний известный (кэш)"
             ts = session.get("updated_at") if session else "—"
             status_text = f"🟡 <b>Статус:</b> Данные из кэша (обновлено: <i>{html_text(str(ts))}</i>)"
-            net_text = "🟢 Online (сессия не активна / нет прав WinRM)" if is_online else "🔴 Offline (ПК выключен)"
+            net_text = "🟢 Online (сессия не активна / WinRM не отвечает)" if is_online else "🔴 Offline (ПК выключен)"
 
         body = [
             f"👤 <b>Сотрудник:</b> <code>{html_text(username)}</code>",
@@ -396,7 +407,7 @@ async def _render_user_pc_lookup(callback: CallbackQuery, username: str, force_s
         )
     else:
         body = [
-            f"Сотрудник <code>{html_text(username)}</code> не найден в кэше и в данный момент не залогинен ни на одной доступной машине."
+            f"Сотрудник <code>{html_text(username)}</code> не найден в кэше и в данный момент не залогинен ни на одной доступной машине (ПК может быть выключен, на VPN без входящего WinRM 5985 или без открытой сессии)."
         ]
         if cached_pc_note:
             body.append(cached_pc_note)

@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 from services.ad_service import ad_service
 from services.pc_monitor_service import check_pc_online, get_pc_logged_user_detailed
 from services.logger_service import get_logger
@@ -6,16 +7,20 @@ from services.logger_service import get_logger
 logger = get_logger("PCBackgroundWorker")
 
 
-async def run_pc_index_cycle(max_concurrency: int = 15) -> dict:
+async def run_pc_index_cycle(max_concurrency: int = 35) -> dict:
     """
     Один тихий цикл индексации активных пользовательских сессий по всем ПК AD.
+    Использует выделенный ThreadPoolExecutor (в обход лимита os.cpu_count()+4).
     Ничего не отправляет в Telegram-чаты. Прекращает цикл при 3 auth_denied подряд.
     """
     computers = await asyncio.to_thread(ad_service.get_target_computers)
     if not computers:
         return {"total": 0, "online": 0, "indexed": 0, "aborted": False}
 
-    sem = asyncio.Semaphore(max_concurrency)
+    loop = asyncio.get_running_loop()
+    workers = max(1, max_concurrency)
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=workers)
+    sem = asyncio.Semaphore(workers)
     stats = {"total": len(computers), "online": 0, "indexed": 0, "aborted": False}
     consecutive_auth_denied = 0
 
@@ -26,14 +31,15 @@ async def run_pc_index_cycle(max_concurrency: int = 15) -> dict:
         async with sem:
             if stats["aborted"]:
                 return
-            online = await asyncio.to_thread(check_pc_online, pc_host)
+            online = await loop.run_in_executor(executor, check_pc_online, pc_host)
             if not online:
                 return
             stats["online"] += 1
 
             pc_short = pc_host.split(".")[0]
             dns = pc_host if "." in pc_host else ""
-            res = await asyncio.to_thread(
+            res = await loop.run_in_executor(
+                executor,
                 get_pc_logged_user_detailed,
                 pc_short,
                 dns,
@@ -54,7 +60,10 @@ async def run_pc_index_cycle(max_concurrency: int = 15) -> dict:
             if res.get("username"):
                 stats["indexed"] += 1
 
-    await asyncio.gather(*(probe(pc) for pc in computers), return_exceptions=True)
+    try:
+        await asyncio.gather(*(probe(pc) for pc in computers), return_exceptions=True)
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
     return stats
 
 

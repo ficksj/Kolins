@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import datetime
 import json
 import os
@@ -6,6 +7,7 @@ import platform
 import re
 import socket
 import subprocess
+import threading
 
 try:
     from pypsrp.client import Client as WinRMClient
@@ -161,13 +163,13 @@ def get_pc_logged_user_quser(target_pc: str) -> str | None:
         return None
 
 
-def _parse_quser_output(raw_text: str) -> str | None:
-    """Извлекает имя активного пользователя из вывода quser."""
+def _parse_quser_all_users(raw_text: str) -> list[str]:
+    """Извлекает всех залогиненных пользователей из вывода quser (активные первыми)."""
     lines = [l for l in raw_text.strip().splitlines() if l.strip()]
     if len(lines) < 2:
-        return None
-    # Приоритет активной сессии (Active / Активно)
-    fallback_user = None
+        return []
+    active: list[str] = []
+    other: list[str] = []
     for line in lines[1:]:
         parts = line.split()
         if not parts:
@@ -176,11 +178,18 @@ def _parse_quser_output(raw_text: str) -> str | None:
         if not uname or uname in ("services", "console"):
             continue
         lower_line = line.lower()
-        if "active" in lower_line or "активн" in lower_line:
-            return uname
-        if not fallback_user:
-            fallback_user = uname
-    return fallback_user
+        if "active" in lower_line or "активн" in lower_line or "ђєвЁў" in lower_line:
+            if uname not in active:
+                active.append(uname)
+        elif uname not in other:
+            other.append(uname)
+    return active + [u for u in other if u not in active]
+
+
+def _parse_quser_output(raw_text: str) -> str | None:
+    """Извлекает имя основного активного пользователя из вывода quser."""
+    users = _parse_quser_all_users(raw_text)
+    return users[0] if users else None
 
 
 def get_pc_logged_user_detailed(
@@ -190,10 +199,11 @@ def get_pc_logged_user_detailed(
 ) -> dict:
     """
     Возвращает расширенный результат определения активного пользователя:
-    {"username": str|None, "source": "live"|"cache"|"none", "updated_at": str|None, "error_code": str|None}
+    {"username": str|None, "all_users": list[str], "source": "live"|"cache"|"none", "updated_at": str|None, "error_code": str|None}
     """
     target = _resolve_target(pc_name, dns_name)
     user = None
+    all_users: list[str] = []
     error_code = None
 
     # 1. На Windows сначала пробуем быстрый quser
@@ -201,6 +211,8 @@ def get_pc_logged_user_detailed(
         user = get_pc_logged_user_quser(target)
         if not user and target != pc_name:
             user = get_pc_logged_user_quser(pc_name)
+        if user:
+            all_users = [user]
 
     # 2. Живой опрос (WinRM на Linux или локальный PowerShell WMI на Windows)
     if not user:
@@ -217,31 +229,41 @@ def get_pc_logged_user_detailed(
             out = run_ps_cmd(script, timeout=6)
             if out and out not in ("__ERROR__", "__NOBODY__"):
                 user = (out.split("\\")[-1] if "\\" in out else out).strip().lower()
+                if user:
+                    all_users = [user]
         else:
-            # На удаленной машине через WinRM выполняем локальный запрос (без -ComputerName!)
+            # Запрашиваем и Win32_ComputerSystem.UserName, и UTF-8 quser (чтобы видеть и RDP/переключённые сессии)
             ps_winrm = """
             $u = (Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue).UserName
             if ($u) {
                 Write-Output ("__USER__" + $u)
-            } else {
-                $q = quser 2>$null
-                if ($q) {
-                    Write-Output "__QUSER_START__"
-                    $q | ForEach-Object { Write-Output $_ }
-                } else {
-                    Write-Output "__NOBODY__"
-                }
+            }
+            $q = cmd /c "chcp 65001 >nul 2>nul & quser 2>nul"
+            if ($q) {
+                Write-Output "__QUSER_START__"
+                $q | ForEach-Object { Write-Output $_ }
+            } elseif (-not $u) {
+                Write-Output "__NOBODY__"
             }
             """
             ok, out, err = _run_winrm_ps(target, ps_winrm, timeout=7)
             if ok and out:
+                cs_user = None
                 if "__USER__" in out:
                     raw_u = out.split("__USER__", 1)[1].splitlines()[0].strip()
                     if raw_u:
-                        user = (raw_u.split("\\")[-1] if "\\" in raw_u else raw_u).strip().lower()
-                elif "__QUSER_START__" in out:
+                        cs_user = (raw_u.split("\\")[-1] if "\\" in raw_u else raw_u).strip().lower()
+                quser_users: list[str] = []
+                if "__QUSER_START__" in out:
                     quser_text = out.split("__QUSER_START__", 1)[1]
-                    user = _parse_quser_output(quser_text)
+                    quser_users = _parse_quser_all_users(quser_text)
+
+                if cs_user:
+                    all_users.append(cs_user)
+                for qu in quser_users:
+                    if qu not in all_users:
+                        all_users.append(qu)
+                user = cs_user or (quser_users[0] if quser_users else None)
             elif not ok:
                 error_code = err
 
@@ -249,6 +271,7 @@ def get_pc_logged_user_detailed(
         save_user_pc_session(user, pc_name, target if target != pc_name else dns_name)
         return {
             "username": user,
+            "all_users": all_users or [user],
             "source": "live",
             "updated_at": None,
             "error_code": None,
@@ -260,6 +283,7 @@ def get_pc_logged_user_detailed(
         if saved and saved.get("username"):
             return {
                 "username": saved["username"],
+                "all_users": [saved["username"]],
                 "source": "cache",
                 "updated_at": saved.get("updated_at"),
                 "error_code": error_code,
@@ -267,6 +291,7 @@ def get_pc_logged_user_detailed(
 
     return {
         "username": None,
+        "all_users": [],
         "source": "none",
         "updated_at": None,
         "error_code": error_code,
@@ -579,34 +604,62 @@ def kill_remote_processes(
 async def find_pc_by_username_scan(
     target_username: str,
     computer_list: list[str],
-    max_concurrency: int = 25,
+    max_concurrency: int = 50,
 ) -> str | None:
-    """Параллельный живой опрос онлайн-компьютеров для поиска ПК сотрудника."""
+    """
+    Быстрый двухфазный поиск ПК сотрудника по домену через выделенный пул потоков:
+    1) Отсев машин без открытого WinRM (TCP 5985) за ~1–2 сек (вместо медленного ping всех оффлайн-ПК)
+    2) Параллельный WinRM-опрос доступных ПК с ранней остановкой при первом совпадении.
+    """
     target = target_username.strip().lower()
-    semaphore = asyncio.Semaphore(max_concurrency)
+    if not target or not computer_list:
+        return None
 
-    async def probe(pc_dns: str):
-        pc_name = pc_dns.split(".")[0]
-        async with semaphore:
-            is_online = await asyncio.to_thread(check_pc_online, pc_dns)
-            if not is_online:
+    use_winrm_port_filter = (not _is_windows()) or bool(os.getenv("PC_ADMIN_USER"))
+
+    def _scan_sync() -> str | None:
+        stop_event = threading.Event()
+
+        def is_candidate_reachable(pc_dns: str) -> str | None:
+            if stop_event.is_set():
                 return None
-            # В живом скане проверяем только живую сессию (чтобы не читать SQLite 481 раз впустую)
-            user = await asyncio.to_thread(get_pc_logged_user, pc_name, pc_dns, False)
-            if user and user.lower() == target:
+            ok = _check_tcp_port(pc_dns, 5985, 0.5) if use_winrm_port_filter else check_pc_online(pc_dns)
+            return pc_dns if ok else None
+
+        port_workers = min(80, max(1, len(computer_list)))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=port_workers) as port_pool:
+            candidates = [pc for pc in port_pool.map(is_candidate_reachable, computer_list) if pc]
+
+        if not candidates:
+            return None
+
+        def probe_user(pc_dns: str) -> str | None:
+            if stop_event.is_set():
+                return None
+            pc_name = pc_dns.split(".")[0]
+            res = get_pc_logged_user_detailed(pc_name, pc_dns, False)
+            if stop_event.is_set():
+                return None
+            users = res.get("all_users") or ([res["username"]] if res.get("username") else [])
+            if any(str(u).strip().lower() == target for u in users):
                 return pc_name
             return None
 
-    tasks = [asyncio.create_task(probe(pc)) for pc in computer_list]
-    for completed_task in asyncio.as_completed(tasks):
+        winrm_workers = min(max(1, max_concurrency), len(candidates))
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=winrm_workers)
+        futures = [pool.submit(probe_user, pc) for pc in candidates]
         try:
-            result = await completed_task
-        except asyncio.CancelledError:
-            continue
-        if result:
-            for t in tasks:
-                if not t.done():
-                    t.cancel()
-            return result
+            for fut in concurrent.futures.as_completed(futures):
+                try:
+                    hit = fut.result()
+                except Exception:
+                    continue
+                if hit:
+                    stop_event.set()
+                    return hit
+        finally:
+            stop_event.set()
+            pool.shutdown(wait=False, cancel_futures=True)
+        return None
 
-    return None
+    return await asyncio.to_thread(_scan_sync)
