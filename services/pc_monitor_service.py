@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import json
 import os
 import platform
@@ -203,7 +204,7 @@ def get_pc_logged_user_detailed(
 
     # 2. Живой опрос (WinRM на Linux или локальный PowerShell WMI на Windows)
     if not user:
-        if _is_windows() and not config.PC_ADMIN_USER:
+        if _is_windows() and not os.getenv("PC_ADMIN_USER"):
             safe_pc = pc_name.replace("'", "''")
             script = f"""
             try {{
@@ -278,11 +279,151 @@ def get_pc_logged_user(pc_name: str, dns_name: str = "", allow_cache_fallback: b
     return res.get("username")
 
 
+def _parse_ps_datetime(raw: object) -> datetime.datetime | None:
+    """Разбирает ISO или legacy WMI дату вида YYYYmmddHHMMSS."""
+    if not raw:
+        return None
+    s = str(raw).strip()
+    if len(s) >= 19 and s[4] == "-" and s[10] == "T":
+        try:
+            return datetime.datetime.strptime(s[:19], "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            return None
+    digits = re.match(r"^(\d{14})", s)
+    if digits:
+        try:
+            return datetime.datetime.strptime(digits.group(1), "%Y%m%d%H%M%S")
+        except ValueError:
+            return None
+    return None
+
+
+def _format_uptime(boot_raw: object, now_raw: object) -> str:
+    """Вычисляет аптайм на стороне Python (без .NET вызовов на удаленном ПК)."""
+    boot_dt = _parse_ps_datetime(boot_raw)
+    if not boot_dt:
+        return "—"
+    now_dt = _parse_ps_datetime(now_raw) or datetime.datetime.now()
+    delta = now_dt - boot_dt
+    if delta.total_seconds() < 0:
+        delta = datetime.timedelta(0)
+    days = delta.days
+    hours = delta.seconds // 3600
+    minutes = (delta.seconds % 3600) // 60
+    return f"{days} дн. {hours} ч. {minutes} мин."
+
+
+def _extract_ipv4(raw_ips: object) -> str:
+    """Оставляет уникальные не-loopback/non-APIPA IPv4 адреса."""
+    if isinstance(raw_ips, str):
+        items = [raw_ips]
+    elif isinstance(raw_ips, list):
+        items = [str(x).strip() for x in raw_ips if x]
+    else:
+        items = []
+
+    ipv4 = []
+    seen = set()
+    for ip in items:
+        if ":" in ip or "." not in ip:
+            continue
+        if ip.startswith("127.") or ip.startswith("169.254."):
+            continue
+        if ip not in seen:
+            seen.add(ip)
+            ipv4.append(ip)
+    return ", ".join(ipv4) if ipv4 else "—"
+
+
+def _clean_text_field(val: object) -> str:
+    s = str(val).strip() if val is not None else ""
+    return s or "—"
+
+
+def _build_diagnostics_result(raw: dict) -> dict:
+    """Нормализует сырые телеметрические данные WMI/CIM в словарь диагностики."""
+    if "ram_total_gb" in raw and "disks" in raw and "uptime" in raw:
+        return raw
+
+    kib_per_gb = float(1024 * 1024)
+    bytes_per_gb = float(1024**3)
+    mem_total_kb = float(raw.get("mem_total_kb") or 0)
+    mem_free_kb = float(raw.get("mem_free_kb") or 0)
+    total_ram_gb = round(mem_total_kb / kib_per_gb, 1)
+    free_ram_gb = round(mem_free_kb / kib_per_gb, 1)
+    used_ram_gb = round(max(0.0, total_ram_gb - free_ram_gb), 1)
+    ram_pct = round((used_ram_gb / total_ram_gb) * 100, 1) if total_ram_gb > 0 else 0
+
+    raw_disks = raw.get("disks") or []
+    if isinstance(raw_disks, dict):
+        raw_disks = [raw_disks]
+
+    disk_list = []
+    for d in raw_disks:
+        if not isinstance(d, dict):
+            continue
+        size_b = float(d.get("size") or 0)
+        free_b = float(d.get("free") or 0)
+        tot = round(size_b / bytes_per_gb, 1)
+        free = round(free_b / bytes_per_gb, 1)
+        used = round(max(0.0, tot - free), 1)
+        pct = round((used / tot) * 100, 1) if tot > 0 else 0
+        disk_list.append(
+            {
+                "device": _clean_text_field(d.get("device") or d.get("DeviceID")),
+                "total_gb": tot,
+                "free_gb": free,
+                "used_gb": used,
+                "percent": pct,
+            }
+        )
+
+    return {
+        "uptime": _format_uptime(raw.get("boot"), raw.get("now")),
+        "ram_total_gb": total_ram_gb,
+        "ram_free_gb": free_ram_gb,
+        "ram_used_gb": used_ram_gb,
+        "ram_percent": ram_pct,
+        "disks": disk_list,
+        "manufacturer": _clean_text_field(raw.get("manufacturer")),
+        "model": _clean_text_field(raw.get("model")),
+        "serial_number": _clean_text_field(raw.get("serial_number")),
+        "ip_address": _extract_ipv4(raw.get("ips")),
+    }
+
+
+def _normalize_critical_events(raw_events: object) -> list[dict]:
+    """Приводит список событий WinEvent к компактному формату для Telegram-карточки."""
+    if isinstance(raw_events, dict):
+        items = [raw_events]
+    elif isinstance(raw_events, list):
+        items = raw_events
+    else:
+        return []
+
+    normalized = []
+    for ev in items:
+        if not isinstance(ev, dict):
+            continue
+        raw_msg = ev.get("Message") if ev.get("Message") is not None else ev.get("msg", "")
+        msg_clean = re.sub(r"\s+", " ", str(raw_msg or "")).strip()[:140]
+        normalized.append(
+            {
+                "time": str(ev.get("time") or ""),
+                "Id": ev.get("Id", ""),
+                "ProviderName": str(ev.get("ProviderName") or ""),
+                "msg": msg_clean,
+            }
+        )
+    return normalized
+
+
 def get_pc_diagnostics(pc_name: str, dns_name: str = "") -> dict | None:
     """
     Кроссплатформенная удаленная диагностика ПК через WinRM / PowerShell:
     - Uptime, RAM, Диски (C:/D:/...)
     - Модель оборудования, Производитель, Серийный номер (S/N), IPv4
+    Скрипт не использует .NET-вызовы [math]/ManagementDateTimeConverter ради совместимости с ConstrainedLanguageMode.
     При ошибке авторизации возвращает {'_error': 'auth_denied'}.
     """
     target = _resolve_target(pc_name, dns_name)
@@ -299,53 +440,43 @@ def get_pc_diagnostics(pc_name: str, dns_name: str = "") -> dict | None:
         $os = {wmi_prefix} -Class Win32_OperatingSystem -ErrorAction Stop
         $cs = {wmi_prefix} -Class Win32_ComputerSystem -ErrorAction SilentlyContinue
         $bios = {wmi_prefix} -Class Win32_BIOS -ErrorAction SilentlyContinue
-        $disks = {wmi_prefix} -Class Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue
+        $disks = @({wmi_prefix} -Class Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue)
 
         $lastBoot = $os.LastBootUpTime
-        if ($lastBoot -is [string]) {{
-            $bootTime = [Management.ManagementDateTimeConverter]::ToDateTime($lastBoot)
-        }} else {{
-            $bootTime = $lastBoot
-        }}
-        $uptime = (Get-Date) - $bootTime
-        $uptimeStr = "$([int]$uptime.Days) дн. $($uptime.Hours) ч. $($uptime.Minutes) мин."
-
-        $totalRamGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
-        $freeRamGB = [math]::Round($os.FreePhysicalMemory / 1MB, 1)
-        $usedRamGB = [math]::Round($totalRamGB - $freeRamGB, 1)
-        $ramPct = if ($totalRamGB -gt 0) {{ [math]::Round(($usedRamGB / $totalRamGB) * 100, 1) }} else {{ 0 }}
+        $bootIso = if ($lastBoot -is [datetime]) {{ Get-Date $lastBoot -Format "yyyy-MM-ddTHH:mm:ss" }} else {{ [string]$lastBoot }}
+        $nowIso = Get-Date -Format "yyyy-MM-ddTHH:mm:ss"
 
         $diskList = @()
         foreach ($d in $disks) {{
-            $tot = [math]::Round($d.Size / 1GB, 1)
-            $free = [math]::Round($d.FreeSpace / 1GB, 1)
-            $used = [math]::Round($tot - $free, 1)
-            $pct = if ($tot -gt 0) {{ [math]::Round(($used / $tot) * 100, 1) }} else {{ 0 }}
-            $diskList += @{{
-                device = $d.DeviceID
-                total_gb = $tot
-                free_gb = $free
-                used_gb = $used
-                percent = $pct
+            if ($d) {{
+                $diskList += @{{
+                    device = $d.DeviceID
+                    size = $d.Size
+                    free = $d.FreeSpace
+                }}
             }}
         }}
 
         $ips = @()
         try {{
-            $ips = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object {{ $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' }} | Select-Object -ExpandProperty IPAddress)
+            $ips = @({wmi_prefix} -Class Win32_NetworkAdapterConfiguration -Filter "IPEnabled=True" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty IPAddress)
         }} catch {{}}
+        if (-not $ips -or $ips.Count -eq 0) {{
+            try {{
+                $ips = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty IPAddress)
+            }} catch {{}}
+        }}
 
         @{{
-            uptime = $uptimeStr
-            ram_total_gb = $totalRamGB
-            ram_free_gb = $freeRamGB
-            ram_used_gb = $usedRamGB
-            ram_percent = $ramPct
+            boot = $bootIso
+            now = $nowIso
+            mem_total_kb = $os.TotalVisibleMemorySize
+            mem_free_kb = $os.FreePhysicalMemory
             disks = $diskList
-            manufacturer = if ($cs.Manufacturer) {{ $cs.Manufacturer.Trim() }} else {{ "—" }}
-            model = if ($cs.Model) {{ $cs.Model.Trim() }} else {{ "—" }}
-            serial_number = if ($bios.SerialNumber) {{ $bios.SerialNumber.Trim() }} else {{ "—" }}
-            ip_address = if ($ips) {{ ($ips -join ", ") }} else {{ "—" }}
+            manufacturer = $cs.Manufacturer
+            model = $cs.Model
+            serial_number = $bios.SerialNumber
+            ips = @($ips)
         }} | ConvertTo-Json -Compress -Depth 3
     }} catch {{
         Write-Output "__DIAG_ERROR__"
@@ -360,7 +491,8 @@ def get_pc_diagnostics(pc_name: str, dns_name: str = "") -> dict | None:
     if not output or "__DIAG_ERROR__" in output:
         return None
     try:
-        return json.loads(output)
+        raw = json.loads(output)
+        return _build_diagnostics_result(raw)
     except Exception as e:
         logger.error(f"Ошибка парсинга диагностики {pc_name}: {e}")
         return None
@@ -374,12 +506,13 @@ def check_pc_critical_events(pc_name: str, dns_name: str = "") -> list[dict] | d
 
     script = f"""
     try {{
-        $ev = Get-WinEvent {comp_param} -FilterHashtable @{{LogName='System'; Level=1,2; StartTime=(Get-Date).AddHours(-24)}} -MaxEvents 8 -ErrorAction SilentlyContinue |
-        Select-Object @{{Name='time';Expression={{$_.TimeCreated.ToString('dd.MM HH:mm')}}}}, Id, ProviderName, @{{Name='msg';Expression={{($_.Message -replace '\\s+', ' ').Substring(0, [Math]::Min(140, ($_.Message -replace '\\s+', ' ').Length))}}}}
-        if (-not $ev) {{
+        $since = (Get-Date).AddHours(-24)
+        $ev = @(Get-WinEvent {comp_param} -FilterHashtable @{{LogName='System'; Level=1,2; StartTime=$since}} -MaxEvents 8 -ErrorAction SilentlyContinue |
+            Select-Object @{{Name='time';Expression={{Get-Date $_.TimeCreated -Format 'dd.MM HH:mm'}}}}, Id, ProviderName, Message)
+        if (-not $ev -or $ev.Count -eq 0) {{
             Write-Output "[]"
         }} else {{
-            $ev | ConvertTo-Json -Compress
+            ConvertTo-Json -InputObject $ev -Compress -Depth 2
         }}
     }} catch {{
         Write-Output "__REMOTE_QUERY_ERROR__"
@@ -394,9 +527,7 @@ def check_pc_critical_events(pc_name: str, dns_name: str = "") -> list[dict] | d
         return None
     try:
         events = json.loads(output)
-        if isinstance(events, dict):
-            events = [events]
-        return events
+        return _normalize_critical_events(events)
     except Exception as e:
         logger.error(f"Не удалось распарсить события для ПК {pc_name}: {e}")
         return None

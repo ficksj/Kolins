@@ -415,6 +415,50 @@ class CoreServicesAndHandlersTests(unittest.TestCase):
         res2 = asyncio.run(rich_message_service.edit_rich_by_ids(fake_bot, 123, 456, "<b>Same</b>"))
         self.assertIsNone(res2)
 
+    def test_pc_diagnostics_and_events_clm_parsers(self):
+        raw_clm = {
+            "boot": "2026-10-31T11:23:42",
+            "now": "2026-11-16T10:23:42",
+            "mem_total_kb": 16435064,
+            "mem_free_kb": 2420884,
+            "disks": {"device": "C:", "size": 509722226688, "free": 204492111872},
+            "manufacturer": "  LENOVO ",
+            "model": None,
+            "serial_number": " PF43DAV7\n",
+            "ips": ["127.0.0.1", "fe80::1", "169.254.1.2", "172.16.2.119", "172.16.2.119"],
+        }
+        diag = pc_monitor_service._build_diagnostics_result(raw_clm)
+        self.assertEqual(diag["uptime"], "15 дн. 23 ч. 0 мин.")
+        self.assertEqual(diag["ram_total_gb"], 15.7)
+        self.assertEqual(diag["ram_free_gb"], 2.3)
+        self.assertEqual(diag["ram_used_gb"], 13.4)
+        self.assertEqual(diag["ip_address"], "172.16.2.119")
+        self.assertEqual(diag["manufacturer"], "LENOVO")
+        self.assertEqual(diag["model"], "—")
+        self.assertEqual(diag["serial_number"], "PF43DAV7")
+        self.assertEqual(len(diag["disks"]), 1)
+        self.assertEqual(diag["disks"][0]["total_gb"], 474.7)
+
+        # Legacy WMI date format fallback
+        self.assertEqual(
+            pc_monitor_service._format_uptime("20261115100000.000000+300", "2026-11-16T12:30:00"),
+            "1 дн. 2 ч. 30 мин.",
+        )
+
+        # Events normalization (single dict + multiline collapse + 140-char truncation)
+        ev = pc_monitor_service._normalize_critical_events(
+            {
+                "time": "16.11 08:49",
+                "Id": 1096,
+                "ProviderName": "GroupPolicy",
+                "Message": "Line1\r\n   " + ("X" * 200),
+            }
+        )
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0]["Id"], 1096)
+        self.assertEqual(len(ev[0]["msg"]), 140)
+        self.assertTrue(ev[0]["msg"].startswith("Line1 X"))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
