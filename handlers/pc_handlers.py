@@ -91,11 +91,14 @@ def render_pc_profile(
             callback_button(lotus_btn_text, f"lotus:pc:{name}", "primary"),
         ),
         button_row(
-            callback_button("⚠️ События (24ч)", f"pc:events:{name}", "secondary"),
             callback_button("📦 В notebooklenovo", f"pc:move:{name}", "primary"),
+            callback_button("🖥 В KDB Computers", f"pc:move_comp:{name}", "primary"),
         ),
         button_row(
+            callback_button("⚠️ События (24ч)", f"pc:events:{name}", "secondary"),
             callback_button("🔄 gpupdate /force", f"pc:gpupdate:{name}", "primary"),
+        ),
+        button_row(
             callback_button("🗑 Удалить из AD", f"pc:delete_confirm:{name}", "danger"),
         ),
         button_row(
@@ -556,8 +559,12 @@ async def handle_pc_action(callback: CallbackQuery, state: FSMContext):
         await edit_rich(callback.message, card)
         return
 
-    if action == "move":
-        target_ou = config.TARGET_PC_MOVE_OU
+    if action in ("move", "move_comp"):
+        target_ou = (
+            "OU=KDB Computers,DC=kdb,DC=kz"
+            if action == "move_comp"
+            else config.TARGET_PC_MOVE_OU
+        )
         success = await asyncio.to_thread(ad_service.move_computer, value, target_ou)
         await send_audit_log(callback.bot, callback.from_user, "Перемещение ПК", f"{value} -> {target_ou}", status=success)
         badge = "Успешно" if success else "Ошибка"
