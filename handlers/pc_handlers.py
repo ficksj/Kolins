@@ -96,10 +96,6 @@ def render_pc_profile(
         ),
         button_row(
             callback_button("🔄 gpupdate /force", f"pc:gpupdate:{name}", "primary"),
-            callback_button("🚪 Logoff сеанса", f"pc:logoff_ask:{name}", "danger"),
-        ),
-        button_row(
-            callback_button("🔄 Перезагрузить", f"pc:reboot_confirm:{name}", "danger"),
             callback_button("🗑 Удалить из AD", f"pc:delete_confirm:{name}", "danger"),
         ),
         button_row(
