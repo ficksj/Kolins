@@ -601,6 +601,50 @@ def kill_remote_processes(
     return False, err_code or "error"
 
 
+def run_gpupdate_remote(pc_name: str, dns_name: str = "") -> tuple[bool, str]:
+    """Удаленно запускает обновление групповых политик (gpupdate /force) на ПК через pypsrp."""
+    target = _resolve_target(pc_name, dns_name)
+    script = 'cmd /c "echo N | gpupdate /force"'
+    ok, output, err_code = _run_winrm_ps(target, script, timeout=20)
+    if ok:
+        return True, (output or "ok").strip()
+    return False, err_code or "error"
+
+
+def logoff_remote_session(pc_name: str, dns_name: str = "") -> tuple[bool, str]:
+    """Завершает пользовательские сеансы на удаленном ПК через quser + logoff через pypsrp."""
+    target = _resolve_target(pc_name, dns_name)
+    script = r"""
+    $lines = quser 2>$null
+    if (-not $lines) {
+        Write-Output "__NO_SESSIONS__"
+        exit 0
+    }
+    $count = 0
+    foreach ($line in $lines | Select-Object -Skip 1) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed) { continue }
+        $parts = $trimmed -split '\s+'
+        foreach ($p in $parts) {
+            if ($p -match '^\d+$') {
+                logoff $p 2>$null
+                $count++
+                break
+            }
+        }
+    }
+    Write-Output "__LOGOFF_OK__:$count"
+    """
+    ok, output, err_code = _run_winrm_ps(target, script, timeout=12)
+    if not ok:
+        return False, err_code or "error"
+    if "__NO_SESSIONS__" in output:
+        return True, "no_sessions"
+    if "__LOGOFF_OK__:" in output:
+        return True, output.split("__LOGOFF_OK__:", 1)[1].strip()
+    return True, "ok"
+
+
 async def find_pc_by_username_scan(
     target_username: str,
     computer_list: list[str],

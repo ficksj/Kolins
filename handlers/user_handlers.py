@@ -123,11 +123,6 @@ def render_user_profile(
         f"<b>👥 Группы безопасности ({len(groups)}):</b><br>{groups_html}"
     )
 
-    toggle_btn = (
-        callback_button("🟢 Включить УЗ", f"user:toggle_ask:{username}", "success")
-        if is_disabled
-        else callback_button("⛔ Отключить УЗ", f"user:toggle_ask:{username}", "danger")
-    )
     cert_btn = (
         callback_button("↩️ Вернуть из Cert OU", f"user:revert:{username}", "success")
         if cert_pending
@@ -144,7 +139,6 @@ def render_user_profile(
             callback_button("🔓 Разблокировать", f"user:unlock:{username}", "success"),
         ),
         button_row(
-            toggle_btn,
             callback_button("👥 Группы AD", f"ugrp:view:{username}", "primary"),
         ),
         button_row(

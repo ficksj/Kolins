@@ -15,7 +15,9 @@ from services.pc_monitor_service import (
     check_pc_online,
     get_pc_diagnostics,
     get_pc_logged_user_detailed,
+    logoff_remote_session,
     reboot_remote_pc_detailed,
+    run_gpupdate_remote,
 )
 from services.rich_message_service import (
     button_row,
@@ -91,6 +93,10 @@ def render_pc_profile(
         button_row(
             callback_button("⚠️ События (24ч)", f"pc:events:{name}", "secondary"),
             callback_button("📦 В notebooklenovo", f"pc:move:{name}", "primary"),
+        ),
+        button_row(
+            callback_button("🔄 gpupdate /force", f"pc:gpupdate:{name}", "primary"),
+            callback_button("🚪 Logoff сеанса", f"pc:logoff_ask:{name}", "danger"),
         ),
         button_row(
             callback_button("🔄 Перезагрузить", f"pc:reboot_confirm:{name}", "danger"),
@@ -425,6 +431,90 @@ async def handle_pc_action(callback: CallbackQuery, state: FSMContext):
             buttons=[
                 button_row(callback_button("⚠️ Да, перезагрузить", f"pc:reboot_do:{value}", "danger")),
                 button_row(callback_button("❌ Отмена", f"pc:show:{value}", "link")),
+            ],
+        )
+        await edit_rich(callback.message, card)
+        return
+
+    if action == "gpupdate":
+        await edit_rich(
+            callback.message,
+            render_bubble_card(
+                title="🔄 Обновление политик",
+                badge="Выполнение",
+                body_lines=[f"⏳ Запуск <code>gpupdate /force</code> на <code>{html_text(value)}</code>..."],
+            ),
+        )
+        success, result = await asyncio.to_thread(run_gpupdate_remote, value)
+        await send_audit_log(callback.bot, callback.from_user, "Удаленный gpupdate /force", value, status=success)
+
+        if not success and result == "auth_denied":
+            await edit_rich(callback.message, _auth_denied_card(value, f"pc:show:{value}"))
+            return
+
+        badge = "Выполнено" if success else "Ошибка"
+        res_text = (
+            f"Команда <code>gpupdate /force</code> успешно выполнена на <code>{html_text(value)}</code>."
+            if success
+            else f"Не удалось выполнить <code>gpupdate /force</code> на <code>{html_text(value)}</code> ({html_text(result)})."
+        )
+        card = render_bubble_card(
+            title="🔄 Результат gpupdate /force",
+            badge=badge,
+            body_lines=[res_text],
+            buttons=[
+                button_row(callback_button("💻 К карточке ПК", f"pc:show:{value}", "link")),
+            ],
+        )
+        await edit_rich(callback.message, card)
+        return
+
+    if action == "logoff_ask":
+        card = render_bubble_card(
+            title="🚪 Завершение сеансов",
+            badge="Внимание",
+            body_lines=[
+                f"Вы уверены, что хотите завершить пользовательские сеансы на <code>{html_text(value)}</code>?",
+                "Все несохраненные данные в активных сеансах будут потеряны.",
+            ],
+            buttons=[
+                button_row(callback_button("⚠️ Да, завершить сеансы", f"pc:logoff_confirm:{value}", "danger")),
+                button_row(callback_button("❌ Отмена", f"pc:show:{value}", "link")),
+            ],
+        )
+        await edit_rich(callback.message, card)
+        return
+
+    if action == "logoff_confirm":
+        await edit_rich(
+            callback.message,
+            render_bubble_card(
+                title="🚪 Завершение сеансов",
+                badge="Выполнение",
+                body_lines=[f"⏳ Завершение сеансов на <code>{html_text(value)}</code>..."],
+            ),
+        )
+        success, result = await asyncio.to_thread(logoff_remote_session, value)
+        await send_audit_log(callback.bot, callback.from_user, "Удаленный logoff сеанса", value, status=success)
+
+        if not success and result == "auth_denied":
+            await edit_rich(callback.message, _auth_denied_card(value, f"pc:show:{value}"))
+            return
+
+        badge = "Выполнено" if success else "Ошибка"
+        if success and result == "no_sessions":
+            res_text = f"На <code>{html_text(value)}</code> нет активных пользовательских сеансов."
+        elif success:
+            res_text = f"Пользовательские сеансы на <code>{html_text(value)}</code> завершены."
+        else:
+            res_text = f"Не удалось завершить сеансы на <code>{html_text(value)}</code> ({html_text(result)})."
+
+        card = render_bubble_card(
+            title="🚪 Результат завершения сеансов",
+            badge=badge,
+            body_lines=[res_text],
+            buttons=[
+                button_row(callback_button("💻 К карточке ПК", f"pc:show:{value}", "link")),
             ],
         )
         await edit_rich(callback.message, card)
